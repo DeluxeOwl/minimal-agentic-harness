@@ -12,14 +12,14 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, TypedDict, cast, override
+from typing import Annotated, Final, TypedDict, cast, override
 
-from pydantic import ConfigDict, TypeAdapter, ValidationError, with_config
+from pydantic import ConfigDict, Field, TypeAdapter, ValidationError, with_config
 from pydantic_ai import ModelRetry, ToolDefinition
 from pydantic_ai.tools import GenerateToolJsonSchema
 
-MAX_LINES: Final = 200
-"""Longer files are cut, so that one read can't fill the context window."""
+MAX_LINES: Final = 100
+"""Longer files are read in parts, so that one read can't fill the context window."""
 
 
 @with_config(ConfigDict(use_attribute_docstrings=True, extra="forbid"))
@@ -59,18 +59,29 @@ class ListDir(Tool):
 
 @dataclass(frozen=True)
 class ReadFile(Tool):
-    """Read a text file."""
+    """Read a text file. If it is long, the output says how to read the next part."""
 
     path: str
     """The file to read, relative to the working directory."""
 
+    offset: Annotated[int, Field(ge=1)] = 1
+    """The line to start from. The first line is 1."""
+
     @override
     def run(self) -> str:
         lines = Path(self.path).read_text(encoding="utf-8").splitlines()
-        if len(lines) > MAX_LINES:
-            cut = len(lines) - MAX_LINES
-            lines = [*lines[:MAX_LINES], f"[{cut} more lines not shown]"]
-        return "\n".join(lines)
+        total = len(lines)
+        if self.offset > max(total, 1):  # offset=1 is fine for an empty file
+            message = f"There is no line {self.offset}. The file has {total} lines."
+            raise ModelRetry(message)
+        end = self.offset - 1 + MAX_LINES
+        text = "\n".join(lines[self.offset - 1 : end])
+        if end < total:
+            text += (
+                f"\n\n[Showing lines {self.offset}-{end} of {total}. "
+                f"If you need more, read again with offset={end + 1}.]"
+            )
+        return text
 
 
 TOOLS: Final[tuple[type[Tool], ...]] = (ListDir, ReadFile)
