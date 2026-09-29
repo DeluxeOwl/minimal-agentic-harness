@@ -12,7 +12,9 @@ Or run `make run`.
 
 The project requires Python 3.13 or newer. `uv` uses `.python-version` to select a Python interpreter and `uv.lock` to reproduce the environment.
 
-Format, lint, and type-check with `make check`. This command reformats files in place before running Ruff and mypy.
+Sort imports and format files in place with `make format`.
+
+Format, lint, and type-check with `make check`. This command runs `make format` before it runs Ruff and mypy.
 
 To check without modifying files, run:
 

@@ -7,6 +7,8 @@ license = "MIT"
 requires-python = ">=3.13"
 dependencies = [
     "anyio>=4.15.1",
+    "pydantic-ai-slim[openai]>=2.51.0",
+    "rich>=15.0.0",
 ]
 
 [dependency-groups]
@@ -18,7 +20,7 @@ dev = [
 [tool.ruff]
 target-version = "py313"
 line-length = 88
-src = ["src"]
+src = ["src", "src/cmd"]
 
 [tool.ruff.lint]
 # Preview rules maximize coverage but can change when Ruff is upgraded.
@@ -45,11 +47,16 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# This is a standalone script, not an importable package named like stdlib cmd.
-"src/cmd/main.py" = ["implicit-namespace-package"]
+# These are the modules of a standalone script, not an importable package named
+# like stdlib cmd. The script imports its sibling modules directly.
+"src/cmd/*.py" = ["implicit-namespace-package"]
 
 [tool.ruff.lint.flake8-type-checking]
 strict = true
+
+[tool.ruff.lint.pylint]
+# Rich calls this method to render an object.
+allow-dunder-method-names = ["__rich_console__"]
 
 [tool.ruff.format]
 docstring-code-format = true

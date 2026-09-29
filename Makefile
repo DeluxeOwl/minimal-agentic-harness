@@ -1,4 +1,4 @@
-.PHONY: run check serve-llm
+.PHONY: run format check serve-llm
 
 # MiniCPM5-2B with its DSpark draft model, served by llama.cpp.
 MINICPM_DOCS := docs/minicpm5-dspark-llama-cpp/README.md
@@ -8,8 +8,12 @@ MINICPM_DRAFT := MiniCPM5-2.6B-DSpark.gguf
 run:
 	uv run --locked src/cmd/main.py
 
-check:
+# ruff format does not sort imports. Import sorting is the I001 lint rule.
+format:
+	uv run --locked ruff check --select I --fix .
 	uv run --locked ruff format .
+
+check: format
 	uv run --locked ruff check .
 	uv run --locked mypy
 
@@ -31,5 +35,5 @@ serve-llm:
 		--spec-type draft-dspark --spec-draft-n-max 7 \
 		-ngl 99 -ngld 99 -fa on \
 		--temp 1.0 --top-p 0.95 --min-p 0.0 \
-		-c 8192 --jinja -a MiniCPM5-2B \
+		-c 131000 --jinja -a MiniCPM5-2B \
 		--host 127.0.0.1 --port 8090
