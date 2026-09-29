@@ -1,0 +1,86 @@
+# Python bytecode and compiled extensions
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# Virtual environments and local package-manager state
+.venv/
+venv/
+env/
+ENV/
+.conda/
+__pypackages__/
+.pdm-python
+.pdm-build/
+.poetry/
+.hatch/
+.uv/
+.uv-cache/
+.direnv/
+
+# Builds and distributions
+build/
+dist/
+wheels/
+pip-wheel-metadata/
+*.egg-info/
+.eggs/
+*.egg
+*.whl
+
+# Tests, coverage, profiling, and static analysis
+.pytest_cache/
+.tox/
+.nox/
+.hypothesis/
+.benchmarks/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+nosetests.xml
+junit.xml
+test-results/
+*.prof
+*.pstats
+.mypy_cache/
+.dmypy.json
+.dmypy.jsonl
+.pyre/
+.pytype/
+.pyright/
+.ruff_cache/
+
+# Documentation and notebooks
+.ipynb_checkpoints/
+docs/_build/
+*.doctree
+/site/
+
+# Local runtime state and secrets
+.env
+.env.*
+!.env.example
+!.env.sample
+*.log
+*.pid
+*.pid.lock
+*.sqlite3
+*.sqlite3-journal
+celerybeat-schedule
+local_settings.py
+instance/
+.cache/
+
+# Editor and operating-system files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Deliberately tracked: pyproject.toml, uv.lock, and .python-version.
