@@ -5,3 +5,77 @@ description = "A minimal Python application scaffold"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.1",
+    "ruff>=0.16.9",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+src = ["src"]
+
+[tool.ruff.lint]
+# Preview rules maximize coverage but can change when Ruff is upgraded.
+preview = true
+select = ["ALL"]
+ignore = [
+    # Ruff's formatter is incompatible with these lint rules.
+    "missing-trailing-comma",
+    "prohibited-trailing-comma",
+    "incorrect-blank-line-before-class",
+    "docstring-tab-indentation",
+    "triple-single-quotes",
+    "indentation-with-invalid-multiple",
+    "indentation-with-invalid-multiple-comment",
+    "over-indented",
+    "bad-quotes-inline-string",
+    "bad-quotes-multiline-string",
+    "bad-quotes-docstring",
+    "avoidable-escaped-quote",
+    "unnecessary-escaped-quote",
+    "tab-indentation",
+    # D212 and D213 are mutually exclusive; use the first-line convention.
+    "multi-line-summary-second-line",
+    # A copyright notice needs a real copyright holder and license policy.
+    "missing-copyright-notice",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# This is a standalone script, not an importable package named like stdlib cmd.
+"src/cmd/main.py" = ["implicit-namespace-package"]
+
+[tool.ruff.lint.flake8-type-checking]
+strict = true
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.mypy]
+files = ["."]
+python_version = "3.13"
+strict = true
+warn_unused_configs = true
+warn_unreachable = true
+strict_equality_for_none = true
+follow_untyped_imports = true
+disallow_any_decorated = true
+disallow_any_explicit = true
+disallow_any_expr = true
+disallow_any_unimported = true
+enable_error_code = [
+    "deprecated",
+    "exhaustive-match",
+    "explicit-override",
+    "ignore-without-code",
+    "mutable-override",
+    "possibly-undefined",
+    "redundant-expr",
+    "redundant-self",
+    "truthy-bool",
+    "truthy-iterable",
+    "unimported-reveal",
+    "unused-awaitable",
+]

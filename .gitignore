@@ -6,10 +6,11 @@ __pycache__/
 *.pyd
 
 # Virtual environments and local package-manager state
+.Python
 .venv/
-venv/
-env/
-ENV/
+/venv/
+/env/
+/ENV/
 .conda/
 __pypackages__/
 .pdm-python
@@ -21,10 +22,16 @@ __pypackages__/
 .direnv/
 
 # Builds and distributions
-build/
-dist/
-wheels/
+/build/
+/dist/
+/wheels/
+/develop-eggs/
+/sdist/
+/share/python-wheels/
+.pybuilder/
 pip-wheel-metadata/
+pip-log.txt
+pip-delete-this-directory.txt
 *.egg-info/
 .eggs/
 *.egg
@@ -43,6 +50,7 @@ coverage.xml
 nosetests.xml
 junit.xml
 test-results/
+*.py,cover
 *.prof
 *.pstats
 .mypy_cache/
@@ -55,6 +63,7 @@ test-results/
 
 # Documentation and notebooks
 .ipynb_checkpoints/
+*.nbconvert.ipynb
 docs/_build/
 *.doctree
 /site/
@@ -69,14 +78,21 @@ docs/_build/
 *.pid.lock
 *.sqlite3
 *.sqlite3-journal
+*.sqlite3-shm
+*.sqlite3-wal
+.python_history
 celerybeat-schedule
 local_settings.py
-instance/
+/instance/
 .cache/
 
 # Editor and operating-system files
 .idea/
 .vscode/
+.ropeproject/
+.spyderproject
+.spyproject
+*.iml
 *.swp
 *.swo
 *~
