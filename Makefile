@@ -35,5 +35,5 @@ serve-llm:
 		--spec-type draft-dspark --spec-draft-n-max 7 \
 		-ngl 99 -ngld 99 -fa on \
 		--temp 1.0 --top-p 0.95 --min-p 0.0 \
-		-c 131000 --jinja -a MiniCPM5-2B \
+		-c 131072 --jinja -a MiniCPM5-2B \
 		--host 127.0.0.1 --port 8090

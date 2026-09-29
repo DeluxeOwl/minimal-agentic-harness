@@ -13,7 +13,7 @@ llama-server \
   --spec-type draft-dspark --spec-draft-n-max 7 \
   -ngl 99 -ngld 99 -fa on \
   --temp 1.0 --top-p 0.95 --min-p 0.0 \
-  -c 8192 --jinja -a MiniCPM5-2B \
+  -c 131072 --jinja -a MiniCPM5-2B \
   --host 127.0.0.1 --port 8090
 ```
 
@@ -65,19 +65,19 @@ common_speculative_impl_draft_dflash: - block_size=7, mask_token_id=75982, n_ext
 
 The startup log also shows this error line. It is expected and you can ignore it: `dflash requires ctx_other to be set (this warning is normal during memory fitting)`.
 
-| Flag | Purpose |
-| --- | --- |
-| `-m …F16.gguf` | The target model, unquantized. |
-| `-md …DSpark.gguf` | The draft model. |
-| `--spec-type draft-dspark` | Use the DSpark algorithm. |
-| `--spec-draft-n-max 7` | Draft the full 7-token block. The default is 3, which discards most of each block. Values above 7 are clamped to 7. |
-| `-ngl 99 -ngld 99` | Put all layers of the target and the draft on the GPU (Metal). |
-| `-fa on` | Use flash attention. |
+| Flag                                  | Purpose                                                                                                                                                          |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `-m …F16.gguf`                        | The target model, unquantized.                                                                                                                                   |
+| `-md …DSpark.gguf`                    | The draft model.                                                                                                                                                 |
+| `--spec-type draft-dspark`            | Use the DSpark algorithm.                                                                                                                                        |
+| `--spec-draft-n-max 7`                | Draft the full 7-token block. The default is 3, which discards most of each block. Values above 7 are clamped to 7.                                              |
+| `-ngl 99 -ngld 99`                    | Put all layers of the target and the draft on the GPU (Metal).                                                                                                   |
+| `-fa on`                              | Use flash attention.                                                                                                                                             |
 | `--temp 1.0 --top-p 0.95 --min-p 0.0` | MiniCPM's recommended sampling, used when a request does not set these values. The llama.cpp default `min_p` of 0.05 can cause repetition loops with this model. |
-| `-c 8192` | Context size. The model supports up to 131072. |
-| `--jinja` | Use the chat template in the GGUF. Thinking mode and tool calls need it. |
-| `-a MiniCPM5-2B` | The model name that the API reports. |
-| `--host 127.0.0.1 --port 8090` | Listen on localhost only. Port 8080 is taken by Tilt on this Mac. |
+| `-c 131072`                           | Context size. The model supports up to 131072.                                                                                                                   |
+| `--jinja`                             | Use the chat template in the GGUF. Thinking mode and tool calls need it.                                                                                         |
+| `-a MiniCPM5-2B`                      | The model name that the API reports.                                                                                                                             |
+| `--host 127.0.0.1 --port 8090`        | Listen on localhost only. Port 8080 is taken by Tilt on this Mac.                                                                                                |
 
 The server uses about 6 GB of RAM.
 
@@ -101,7 +101,7 @@ llama-cli \
   -m "$LLAMA_CACHE/MiniCPM5-2B-F16.gguf" \
   -md "$LLAMA_CACHE/MiniCPM5-2.6B-DSpark.gguf" \
   --spec-type draft-dspark --spec-draft-n-max 7 \
-  -ngl 99 -ngld 99 -fa on -c 8192 \
+  -ngl 99 -ngld 99 -fa on -c 131072 \
   --temp 1.0 --top-p 0.95 --min-p 0.0
 ```
 
@@ -127,19 +127,19 @@ For the baseline, stop the DSpark server, start one without the draft, and run t
 
 ```bash
 llama-server -m "$LLAMA_CACHE/MiniCPM5-2B-F16.gguf" \
-  -ngl 99 -fa on -c 8192 --jinja -a MiniCPM5-2B --host 127.0.0.1 --port 8090
+  -ngl 99 -fa on -c 131072 --jinja -a MiniCPM5-2B --host 127.0.0.1 --port 8090
 ```
 
 Results on the M3 Pro (F16 target, up to 1024 tokens, one run per row):
 
-| Prompt | Temp | No draft (tok/s) | DSpark (tok/s) | Speedup | Mean len |
-| --- | --- | --- | --- | --- | --- |
-| math | 0 | 26.9 | 75.8 | 2.8× | 5.14 |
-| code | 0 | 26.2 | 81.0 | 3.1× | 5.55 |
-| general | 0 | 26.2 | 35.9 | 1.4× | 2.44 |
-| math | 1.0 | 26.1 | 51.8 | 2.0× | 3.58 |
-| code | 1.0 | 27.0 | 47.7 | 1.8× | 3.31 |
-| general | 1.0 | 26.9 | 31.2 | 1.2× | 2.15 |
+| Prompt  | Temp | No draft (tok/s) | DSpark (tok/s) | Speedup | Mean len |
+| ------- | ---- | ---------------- | -------------- | ------- | -------- |
+| math    | 0    | 26.9             | 75.8           | 2.8×    | 5.14     |
+| code    | 0    | 26.2             | 81.0           | 3.1×    | 5.55     |
+| general | 0    | 26.2             | 35.9           | 1.4×    | 2.44     |
+| math    | 1.0  | 26.1             | 51.8           | 2.0×    | 3.58     |
+| code    | 1.0  | 27.0             | 47.7           | 1.8×    | 3.31     |
+| general | 1.0  | 26.9             | 31.2           | 1.2×    | 2.15     |
 
 - Math and code get the largest speedup because the draft predicts them well. Free-form prose gets the smallest.
 - Greedy decoding (T=0) gets more speedup than sampling (T=1.0).
