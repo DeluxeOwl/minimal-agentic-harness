@@ -53,7 +53,9 @@ hf download openbmb/MiniCPM5-2B-DSpark-GGUF MiniCPM5-2.6B-DSpark.gguf --local-di
 
 ## 3. Start the server
 
-Run [the command](#the-command). These lines in the startup log show that DSpark is on:
+Run [the command](#the-command). Or, from the repository root, run `make serve-llm`. It checks that steps 1 and 2 are done, then runs the same command.
+
+These lines in the startup log show that DSpark is on:
 
 ```text
 common_speculative_impl_draft_dflash: adding speculative implementation 'draft-dspark'

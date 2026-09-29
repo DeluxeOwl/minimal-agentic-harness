@@ -4,11 +4,13 @@
 
 import sys
 
+import anyio
 
-def main() -> None:
+
+async def main() -> None:  # ruff: ignore[unused-async]
     """Run the application."""
     sys.stdout.write("Hello from minimal-agentic-harness!\n")
 
 
 if __name__ == "__main__":
-    main()
+    anyio.run(main)

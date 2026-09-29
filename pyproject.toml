@@ -5,7 +5,9 @@ description = "A minimal Python application scaffold"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "anyio>=4.15.1",
+]
 
 [dependency-groups]
 dev = [
