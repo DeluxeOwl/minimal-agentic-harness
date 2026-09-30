@@ -7,24 +7,22 @@ the model. If the reply asks for tools, run them, add their results to the
 conversation, and call the model again. Stop when a reply asks for no tools.
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 from pydantic_ai import (
-    ModelMessage,
     ModelRequest,
-    ModelResponse,
-    ModelResponsePart,
     ModelRetry,
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
     RetryPromptPart,
     SystemPromptPart,
-    ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
 )
@@ -41,13 +39,21 @@ from pydantic_ai.providers.openai import OpenAIProvider
 import tools
 import ui
 
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    from pydantic_ai import (
+        ModelMessage,
+        ModelResponse,
+        ModelResponsePart,
+        ToolCallPart,
+        ToolDefinition,
+    )
+    from pydantic_ai.models import Model
+
 BASE_URL: Final = "http://127.0.0.1:8090/v1"
 """The llama.cpp server that `make serve-llm` starts."""
 
-MODEL: Final = OpenAIChatModel(
-    "MiniCPM5-2B", provider=OpenAIProvider(base_url=BASE_URL, api_key="local")
-)
-TOOLS: Final = ModelRequestParameters(function_tools=tools.DEFINITIONS)
 SYSTEM_PROMPT: Final = f"""\
 You are a coding assistant in a terminal. The working directory is {Path.cwd()}.
 Use the tools to look at files before you answer questions about them.
@@ -58,36 +64,77 @@ PREVIEW_LINES: Final = 3
 """Lines of tool output to show. The model gets all of it."""
 
 
-async def agent(messages: list[ModelMessage]) -> None:
-    """Run the agent loop: call the model until it answers without tools."""
-    with ui.Live(hint="ctrl+c to interrupt") as live:
-        while True:
-            response = await invoke(messages, live)
-            messages.append(response)
-            tool_calls = [p for p in response.parts if p.part_kind == "tool-call"]
-            if not tool_calls:
-                break
-            results = [execute(tool_call, live) for tool_call in tool_calls]
-            messages.append(ModelRequest(parts=results))
+class Agent[Client]:
+    """Answer prompts with a model and tools, remembering the conversation."""
 
+    def __init__(
+        self,
+        *,
+        model: Model[Client],
+        system_prompt: str,
+        tool_definitions: Sequence[ToolDefinition],
+        execute_tool: Callable[[str, str], str],
+    ) -> None:
+        """Use the supplied model, prompt, tool schemas, and tool dispatcher."""
+        self._model = model
+        self._tools = ModelRequestParameters(function_tools=list(tool_definitions))
+        self._execute_tool = execute_tool
+        self.messages: list[ModelMessage] = [
+            ModelRequest(parts=[SystemPromptPart(system_prompt)])
+        ]
 
-async def invoke(messages: list[ModelMessage], live: ui.Live) -> ModelResponse:
-    """`llm.invoke(messages, tools)`, showing the reply as it streams in.
+    async def respond(self, prompt: str, live: ui.Live) -> ModelResponse:
+        """Answer a prompt, calling tools until the model has finished.
 
-    Returns:
-        The model's whole reply.
+        A failed or cancelled turn leaves the conversation as it was.
 
-    """
-    live.status("Thinking")
-    async with model_request_stream(
-        MODEL, messages, model_request_parameters=TOOLS
-    ) as stream:
-        async for event in stream:
-            if isinstance(event, PartStartEvent | PartDeltaEvent):
-                show(stream.get().parts[event.index], live)
-            elif isinstance(event, PartEndEvent):
-                show(event.part, live, done=True)
-        return stream.get()
+        Returns:
+            The model's final reply, without tool calls.
+
+        """
+        before = len(self.messages)
+        self.messages.append(ModelRequest(parts=[UserPromptPart(prompt)]))
+        try:  # ruff: ignore[too-many-statements-in-try-clause] -- one atomic turn
+            while True:
+                response = await self._call_model(live)
+                self.messages.append(response)
+                tool_calls = [p for p in response.parts if p.part_kind == "tool-call"]
+                if not tool_calls:
+                    return response
+                results = [self._run_tool(tool_call, live) for tool_call in tool_calls]
+                self.messages.append(ModelRequest(parts=results))
+        except BaseException:
+            del self.messages[before:]
+            raise
+
+    def clear(self) -> None:
+        """Forget the conversation, keeping the injected system prompt."""
+        del self.messages[1:]
+
+    async def _call_model(self, live: ui.Live) -> ModelResponse:
+        live.status("Thinking")
+        async with model_request_stream(
+            self._model, self.messages, model_request_parameters=self._tools
+        ) as stream:
+            async for event in stream:
+                if isinstance(event, PartStartEvent | PartDeltaEvent):
+                    show(stream.get().parts[event.index], live)
+                elif isinstance(event, PartEndEvent):
+                    show(event.part, live, done=True)
+            return stream.get()
+
+    def _run_tool(
+        self, tool_call: ToolCallPart, live: ui.Live
+    ) -> ToolReturnPart | RetryPromptPart:
+        live.status(f"Running {tool_call.tool_name}")
+        name, call_id = tool_call.tool_name, tool_call.tool_call_id
+        try:
+            output = self._execute_tool(name, tool_call.args_as_json_str())
+        except ModelRetry as error:
+            show_call(tool_call, error.message, live, ok=False)
+            return RetryPromptPart(error.message, tool_name=name, tool_call_id=call_id)
+        show_call(tool_call, output, live, ok=True)
+        return ToolReturnPart(name, output, tool_call_id=call_id)
 
 
 def show(part: ModelResponsePart, live: ui.Live, *, done: bool = False) -> None:
@@ -105,24 +152,6 @@ def show(part: ModelResponsePart, live: ui.Live, *, done: bool = False) -> None:
             live.status(f"Calling {part.tool_name}")
         case _:
             pass
-
-
-def execute(tool_call: ToolCallPart, live: ui.Live) -> ToolReturnPart | RetryPromptPart:
-    """`execute(tool_call)`: run a tool, and show the call and how it went.
-
-    Returns:
-        What the tool returned, or what went wrong, for the model.
-
-    """
-    live.status(f"Running {tool_call.tool_name}")
-    name, call_id = tool_call.tool_name, tool_call.tool_call_id
-    try:
-        output = tools.run(name, tool_call.args_as_json_str())
-    except ModelRetry as error:
-        show_call(tool_call, error.message, live, ok=False)
-        return RetryPromptPart(error.message, tool_name=name, tool_call_id=call_id)
-    show_call(tool_call, output, live, ok=True)
-    return ToolReturnPart(name, output, tool_call_id=call_id)
 
 
 def show_call(tool_call: ToolCallPart, output: str, live: ui.Live, *, ok: bool) -> None:
@@ -144,19 +173,18 @@ def show_call(tool_call: ToolCallPart, output: str, live: ui.Live, *, ok: bool) 
     )
 
 
-def chat(runner: asyncio.Runner, messages: list[ModelMessage], prompt: str) -> None:
-    """Answer a prompt. If that fails, the conversation stays as it was."""
-    before = len(messages)
-    messages.append(ModelRequest(parts=[UserPromptPart(prompt)]))
+def chat[Client](runner: asyncio.Runner, agent: Agent[Client], prompt: str) -> None:
+    """Render one agent turn, with its error or token and timing footer."""
+    before = len(agent.messages)
     started = time.monotonic()
     try:
-        runner.run(agent(messages))
+        with ui.Live(hint="ctrl+c to interrupt") as live:
+            runner.run(agent.respond(prompt, live))
     except (KeyboardInterrupt, ModelAPIError, UnexpectedModelBehavior) as error:
-        del messages[before:]
         ui.echo(ui.fg("error", f"  ⎿ {explain(error)}"))
         return
     seconds = time.monotonic() - started
-    replies = [m for m in messages[before:] if m.kind == "response"]
+    replies = [m for m in agent.messages[before:] if m.kind == "response"]
     tokens = sum(reply.usage.output_tokens for reply in replies)
     speed = f"{tokens / seconds:.0f} tok/s"
     ui.echo()
@@ -185,26 +213,32 @@ def explain(error: BaseException) -> str:
 
 def main() -> None:
     """Chat with the agent in the terminal, until ctrl+d."""
+    model = OpenAIChatModel(
+        "MiniCPM5-2B", provider=OpenAIProvider(base_url=BASE_URL, api_key="local")
+    )
+    agent = Agent(
+        model=model,
+        system_prompt=SYSTEM_PROMPT,
+        tool_definitions=tools.DEFINITIONS,
+        execute_tool=tools.run,
+    )
     ui.echo(
         ui.bold.bg("accent", " ✻ minimal-agentic-harness "),
-        ui.dim(f"{MODEL.model_name} at {BASE_URL}"),
+        ui.dim(f"{model.model_name} at {BASE_URL}"),
     )
     tool_names = ", ".join(definition.name for definition in tools.DEFINITIONS)
     ui.echo(ui.dim(f"tools: {tool_names} · /clear to start over · ctrl+d to quit"))
     ui.echo()
-    messages: list[ModelMessage] = [
-        ModelRequest(parts=[SystemPromptPart(SYSTEM_PROMPT)])
-    ]
     with asyncio.Runner() as runner:
         while (prompt := ui.ask(PROMPT)) is not None:
             command = prompt.strip()
             if command in {"/exit", "/quit"}:
                 break
             if command == "/clear":
-                del messages[1:]
+                agent.clear()
                 ui.echo(ui.dim("  ⎿ Cleared the conversation"))
             elif command:
-                chat(runner, messages, prompt)
+                chat(runner, agent, prompt)
             ui.echo()
 
 
