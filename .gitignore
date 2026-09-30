@@ -100,3 +100,6 @@ local_settings.py
 Thumbs.db
 
 # Deliberately tracked: pyproject.toml, uv.lock, and .python-version.
+
+scratch/
+

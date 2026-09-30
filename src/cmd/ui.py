@@ -94,12 +94,6 @@ def _color(name: str, *, background: bool) -> Color:
     return Color.parse(back if background else text)
 
 
-def _readable_on(background: Color) -> Color:
-    red, green, blue = background.get_truecolor()
-    brightness = (299 * red + 587 * green + 114 * blue) / 1000
-    return Color.parse("#000000" if brightness > _BRIGHT else "#ffffff")
-
-
 @final
 class Paint:
     """A text style. Chain it to add more, call it with text to paint the text.
@@ -182,13 +176,19 @@ class Paint:
         background = _color(color, background=True)
         if self._style.color is None:
             return self._then(
-                Style(color=_readable_on(background), bgcolor=background), text
+                Style(color=self._readable_on(background), bgcolor=background), text
             )
         return self._then(Style(bgcolor=background), text)
 
     def _then(self, style: Style, text: tuple[str | Text, ...]) -> Paint | Text:
         paint = Paint(self._style + style)
         return paint(*text) if text else paint
+
+    @staticmethod
+    def _readable_on(background: Color) -> Color:
+        red, green, blue = background.get_truecolor()
+        brightness = (299 * red + 587 * green + 114 * blue) / 1000
+        return Color.parse("#000000" if brightness > _BRIGHT else "#ffffff")
 
 
 _PLAIN: Final = Paint()
@@ -326,19 +326,6 @@ def bullet(marker: str | Text, content: RenderableType) -> RenderableType:
     return _Bullet(Text(marker) if isinstance(marker, str) else marker, content)
 
 
-def _shimmer(text: str, now: float) -> Text:
-    base = _color("accent", background=False).get_truecolor()
-    glow = Color.parse(_SHIMMER_GLOW).get_truecolor()
-    sweep = len(text) + 2 * _SHIMMER_WIDTH
-    center = (now % _SHIMMER_SECONDS) / _SHIMMER_SECONDS * sweep - _SHIMMER_WIDTH
-    shimmer = Text()
-    for index, char in enumerate(text):
-        closeness = max(0.0, 1 - abs(index - center) / _SHIMMER_WIDTH)
-        color = Color.from_triplet(blend_rgb(base, glow, closeness))
-        shimmer.append(char, Style(color=color))
-    return shimmer
-
-
 @final
 class _Status:
     def __init__(self, hint: str) -> None:
@@ -356,7 +343,7 @@ class _Status:
         yield Text.assemble(
             fg("accent", frame),
             " ",
-            _shimmer(f"{self.label}…", now),
+            self._shimmer(f"{self.label}…", now),
             dim(f" {' · '.join(facts)}"),
         )
         if self.detail is None:
@@ -370,6 +357,19 @@ class _Status:
             yield from gutter
             yield from line
             yield Segment.line()
+
+    @staticmethod
+    def _shimmer(text: str, now: float) -> Text:
+        base = _color("accent", background=False).get_truecolor()
+        glow = Color.parse(_SHIMMER_GLOW).get_truecolor()
+        sweep = len(text) + 2 * _SHIMMER_WIDTH
+        center = (now % _SHIMMER_SECONDS) / _SHIMMER_SECONDS * sweep - _SHIMMER_WIDTH
+        shimmer = Text()
+        for index, char in enumerate(text):
+            closeness = max(0.0, 1 - abs(index - center) / _SHIMMER_WIDTH)
+            color = Color.from_triplet(blend_rgb(base, glow, closeness))
+            shimmer.append(char, Style(color=color))
+        return shimmer
 
 
 @final

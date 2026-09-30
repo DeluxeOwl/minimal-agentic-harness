@@ -120,18 +120,18 @@ class Grep(Tool):
         if not root.exists():
             message = f"No such file or directory: {self.path!r}"
             raise ModelRetry(message)
-        globs = _expand_braces(self.include)
+        globs = self._expand_braces(self.include)
         files = [
             file
-            for file in _files(root)
+            for file in self._files(root)
             if any(fnmatchcase(file.name, glob) for glob in globs)
         ]
         if not files:
             return f"No files in {self.path!r} match {self.include!r}."
         matches = (
-            f"{file}:{number}:{_shorten(line)}"
+            f"{file}:{number}:{self._shorten(line)}"
             for file in files
-            for number, line in enumerate(_text_lines(file), start=1)
+            for number, line in enumerate(self._text_lines(file), start=1)
             if regex.search(line)
         )
         shown = list(itertools.islice(matches, MAX_MATCHES))
@@ -148,46 +148,49 @@ class Grep(Tool):
             )
         return text
 
+    @staticmethod
+    def _files(root: Path) -> Iterator[Path]:
+        if not root.is_dir():
+            yield root
+            return
+        # Skip hidden files and directories, like `ListDir` does. That skips .git and
+        # .venv too. Sort, so that the same search lists matches in the same order.
+        for directory, subdirectories, names in root.walk():
+            subdirectories[:] = sorted(
+                d for d in subdirectories if not d.startswith(".")
+            )
+            for name in sorted(names):
+                file = directory / name
+                # Reading a pipe can hang.
+                if not name.startswith(".") and file.is_file():
+                    yield file
 
-def _files(root: Path) -> Iterator[Path]:
-    if not root.is_dir():
-        yield root
-        return
-    # Skip hidden files and directories, like `ListDir` does. That skips .git and
-    # .venv too. Sort, so that the same search lists matches in the same order.
-    for directory, subdirectories, names in root.walk():
-        subdirectories[:] = sorted(d for d in subdirectories if not d.startswith("."))
-        for name in sorted(names):
-            file = directory / name
-            if not name.startswith(".") and file.is_file():  # reading a pipe can hang
-                yield file
+    @classmethod
+    def _expand_braces(cls, glob: str) -> list[str]:
+        # Like a shell: "*.{py,md}" gives "*.py" and "*.md". Inner braces go first.
+        end = glob.find("}")
+        start = glob.rfind("{", 0, end)
+        if end == -1 or start == -1:
+            return [glob]
+        head, options, tail = glob[:start], glob[start + 1 : end], glob[end + 1 :]
+        return [
+            expanded
+            for option in options.split(",")
+            for expanded in cls._expand_braces(head + option + tail)
+        ]
 
+    @staticmethod
+    def _text_lines(file: Path) -> list[str]:
+        # Split lines like `ReadFile` does, so that a match's line number is its offset.
+        try:
+            text = file.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return []  # can't be read, or not UTF-8, so binary
+        return [] if "\0" in text else text.splitlines()  # a NUL byte means binary
 
-def _expand_braces(glob: str) -> list[str]:
-    # Like a shell: "*.{py,md}" gives "*.py" and "*.md". Inner braces go first.
-    end = glob.find("}")
-    start = glob.rfind("{", 0, end)
-    if end == -1 or start == -1:
-        return [glob]
-    head, options, tail = glob[:start], glob[start + 1 : end], glob[end + 1 :]
-    return [
-        expanded
-        for option in options.split(",")
-        for expanded in _expand_braces(head + option + tail)
-    ]
-
-
-def _text_lines(file: Path) -> list[str]:
-    # Split lines like `ReadFile` does, so that a match's line number is its offset.
-    try:
-        text = file.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return []  # can't be read, or not UTF-8, so binary
-    return [] if "\0" in text else text.splitlines()  # a NUL byte means binary
-
-
-def _shorten(line: str) -> str:
-    return line if len(line) <= MAX_LINE_LENGTH else f"{line[:MAX_LINE_LENGTH]}…"
+    @staticmethod
+    def _shorten(line: str) -> str:
+        return line if len(line) <= MAX_LINE_LENGTH else f"{line[:MAX_LINE_LENGTH]}…"
 
 
 TOOLS: Final[tuple[type[Tool], ...]] = (ListDir, ReadFile, Grep)
