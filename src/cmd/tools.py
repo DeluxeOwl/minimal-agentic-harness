@@ -4,14 +4,14 @@
 
 A tool is a frozen dataclass. Its docstring tells the model what the tool
 does, its fields are the arguments (their docstrings describe them), and `run`
-does the work. To add a tool, write a class and list it in `TOOLS`.
+does the work. To add a tool, write a class and pass it in `Agent(tools=[...])`.
 """
 
 import inspect
 import itertools
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from pathlib import Path
@@ -193,9 +193,6 @@ class Grep(Tool):
         return line if len(line) <= MAX_LINE_LENGTH else f"{line[:MAX_LINE_LENGTH]}…"
 
 
-TOOLS: Final[tuple[type[Tool], ...]] = (ListDir, ReadFile, Grep)
-
-
 def _name(tool: type[Tool]) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "_", tool.__name__).lower()
 
@@ -212,10 +209,19 @@ def _definition(tool: type[Tool]) -> ToolDefinition:
     )
 
 
-DEFINITIONS: Final = [_definition(tool) for tool in TOOLS]
-"""What the model is told about each tool."""
+def prepare_tools(
+    tools: Sequence[type[Tool]],
+) -> tuple[list[ToolDefinition], dict[str, TypeAdapter[Tool]]]:
+    """Prepare the supplied tool classes for model calls and execution.
 
-_ADAPTERS: Final = {_name(tool): TypeAdapter(tool) for tool in TOOLS}
+    Returns:
+        The schemas in input order and argument validators keyed by tool name.
+
+    """
+    return (
+        [_definition(tool) for tool in tools],
+        {_name(tool): TypeAdapter(tool) for tool in tools},
+    )
 
 
 class _Problem(TypedDict):
@@ -223,8 +229,8 @@ class _Problem(TypedDict):
     msg: str
 
 
-def run(name: str, arguments: str) -> str:
-    """Run a tool with arguments that the model wrote as JSON.
+def run(adapters: Mapping[str, TypeAdapter[Tool]], name: str, arguments: str) -> str:
+    """Run a configured tool with arguments that the model wrote as JSON.
 
     Returns:
         What the tool returned.
@@ -234,9 +240,9 @@ def run(name: str, arguments: str) -> str:
             tool, a bad argument, or a file that does not exist or is binary.
 
     """
-    adapter = _ADAPTERS.get(name)
+    adapter = adapters.get(name)
     if adapter is None:
-        message = f"There is no tool {name!r}. Use one of: {', '.join(_ADAPTERS)}."
+        message = f"There is no tool {name!r}. Use one of: {', '.join(adapters)}."
         raise ModelRetry(message)
     try:
         return adapter.validate_json(arguments).run()

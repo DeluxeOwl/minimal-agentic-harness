@@ -36,27 +36,24 @@ from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-import tools
 import ui
+from tools import Grep, ListDir, ReadFile, prepare_tools
+from tools import run as run_tool
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
     from pydantic_ai import (
         ModelMessage,
         ModelResponse,
         ModelResponsePart,
         ToolCallPart,
-        ToolDefinition,
     )
+
+    from tools import Tool
 
 BASE_URL: Final = "http://127.0.0.1:8090/v1"
 """The llama.cpp server that `make serve-llm` starts."""
-
-SYSTEM_PROMPT: Final = f"""\
-You are a coding assistant in a terminal. The working directory is {Path.cwd()}.
-Use the tools to look at files before you answer questions about them.
-Answer briefly, in Markdown."""
 
 PROMPT: Final = "❯ "  # ruff: ignore[ambiguous-unicode-character-string]
 PREVIEW_LINES: Final = 3
@@ -70,20 +67,19 @@ class Agent:
         self,
         *,
         system_prompt: str,
-        tool_definitions: Sequence[ToolDefinition],
-        execute_tool: Callable[[str, str], str],
+        tools: Sequence[type[Tool]],
     ) -> None:
         """Use the local model with the supplied prompt and tools."""
         self.model = OpenAIChatModel(
             "MiniCPM5-2B", provider=OpenAIProvider(base_url=BASE_URL, api_key="local")
         )
-        self._tools = ModelRequestParameters(function_tools=list(tool_definitions))
-        self._execute_tool = execute_tool
+        self.tool_definitions, self._tool_adapters = prepare_tools(tools)
+        self._tools = ModelRequestParameters(function_tools=self.tool_definitions)
         self.messages: list[ModelMessage] = [
             ModelRequest(parts=[SystemPromptPart(system_prompt)])
         ]
 
-    async def respond(self, prompt: str, live: ui.Live) -> ModelResponse:
+    async def run(self, prompt: str, live: ui.Live) -> ModelResponse:
         """Answer a prompt, calling tools until the model has finished.
 
         A failed or cancelled turn leaves the conversation as it was.
@@ -129,7 +125,7 @@ class Agent:
         live.status(f"Running {tool_call.tool_name}")
         name, call_id = tool_call.tool_name, tool_call.tool_call_id
         try:
-            output = self._execute_tool(name, tool_call.args_as_json_str())
+            output = run_tool(self._tool_adapters, name, tool_call.args_as_json_str())
         except ModelRetry as error:
             show_call(tool_call, error.message, live, ok=False)
             return RetryPromptPart(error.message, tool_name=name, tool_call_id=call_id)
@@ -173,13 +169,13 @@ def show_call(tool_call: ToolCallPart, output: str, live: ui.Live, *, ok: bool) 
     )
 
 
-def chat(runner: asyncio.Runner, agent: Agent, prompt: str) -> None:
+def chat(event_loop: asyncio.Runner, agent: Agent, prompt: str) -> None:
     """Render one agent turn, with its error or token and timing footer."""
     before = len(agent.messages)
     started = time.monotonic()
     try:
         with ui.Live(hint="ctrl+c to interrupt") as live:
-            runner.run(agent.respond(prompt, live))
+            event_loop.run(agent.run(prompt, live))
     except (KeyboardInterrupt, ModelAPIError, UnexpectedModelBehavior) as error:
         ui.echo(ui.fg("error", f"  ⎿ {explain(error)}"))
         return
@@ -214,18 +210,20 @@ def explain(error: BaseException) -> str:
 def main() -> None:
     """Chat with the agent in the terminal, until ctrl+d."""
     agent = Agent(
-        system_prompt=SYSTEM_PROMPT,
-        tool_definitions=tools.DEFINITIONS,
-        execute_tool=tools.run,
+        system_prompt=f"""\
+You are a coding assistant in a terminal. The working directory is {Path.cwd()}.
+Use the tools to look at files before you answer questions about them.
+Answer briefly, in Markdown.""",
+        tools=[Grep, ReadFile, ListDir],
     )
     ui.echo(
         ui.bold.bg("accent", " ✻ minimal-agentic-harness "),
         ui.dim(f"{agent.model.model_name} at {BASE_URL}"),
     )
-    tool_names = ", ".join(definition.name for definition in tools.DEFINITIONS)
+    tool_names = ", ".join(definition.name for definition in agent.tool_definitions)
     ui.echo(ui.dim(f"tools: {tool_names} · /clear to start over · ctrl+d to quit"))
     ui.echo()
-    with asyncio.Runner() as runner:
+    with asyncio.Runner() as event_loop:
         while (prompt := ui.ask(PROMPT)) is not None:
             command = prompt.strip()
             if command in {"/exit", "/quit"}:
@@ -234,7 +232,7 @@ def main() -> None:
                 agent.clear()
                 ui.echo(ui.dim("  ⎿ Cleared the conversation"))
             elif command:
-                chat(runner, agent, prompt)
+                chat(event_loop, agent, prompt)
             ui.echo()
 
 
