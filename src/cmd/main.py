@@ -49,7 +49,6 @@ if TYPE_CHECKING:
         ToolCallPart,
         ToolDefinition,
     )
-    from pydantic_ai.models import Model
 
 BASE_URL: Final = "http://127.0.0.1:8090/v1"
 """The llama.cpp server that `make serve-llm` starts."""
@@ -64,19 +63,20 @@ PREVIEW_LINES: Final = 3
 """Lines of tool output to show. The model gets all of it."""
 
 
-class Agent[Client]:
+class Agent:
     """Answer prompts with a model and tools, remembering the conversation."""
 
     def __init__(
         self,
         *,
-        model: Model[Client],
         system_prompt: str,
         tool_definitions: Sequence[ToolDefinition],
         execute_tool: Callable[[str, str], str],
     ) -> None:
-        """Use the supplied model, prompt, tool schemas, and tool dispatcher."""
-        self._model = model
+        """Use the local model with the supplied prompt and tools."""
+        self.model = OpenAIChatModel(
+            "MiniCPM5-2B", provider=OpenAIProvider(base_url=BASE_URL, api_key="local")
+        )
         self._tools = ModelRequestParameters(function_tools=list(tool_definitions))
         self._execute_tool = execute_tool
         self.messages: list[ModelMessage] = [
@@ -114,7 +114,7 @@ class Agent[Client]:
     async def _call_model(self, live: ui.Live) -> ModelResponse:
         live.status("Thinking")
         async with model_request_stream(
-            self._model, self.messages, model_request_parameters=self._tools
+            self.model, self.messages, model_request_parameters=self._tools
         ) as stream:
             async for event in stream:
                 if isinstance(event, PartStartEvent | PartDeltaEvent):
@@ -173,7 +173,7 @@ def show_call(tool_call: ToolCallPart, output: str, live: ui.Live, *, ok: bool) 
     )
 
 
-def chat[Client](runner: asyncio.Runner, agent: Agent[Client], prompt: str) -> None:
+def chat(runner: asyncio.Runner, agent: Agent, prompt: str) -> None:
     """Render one agent turn, with its error or token and timing footer."""
     before = len(agent.messages)
     started = time.monotonic()
@@ -213,18 +213,14 @@ def explain(error: BaseException) -> str:
 
 def main() -> None:
     """Chat with the agent in the terminal, until ctrl+d."""
-    model = OpenAIChatModel(
-        "MiniCPM5-2B", provider=OpenAIProvider(base_url=BASE_URL, api_key="local")
-    )
     agent = Agent(
-        model=model,
         system_prompt=SYSTEM_PROMPT,
         tool_definitions=tools.DEFINITIONS,
         execute_tool=tools.run,
     )
     ui.echo(
         ui.bold.bg("accent", " ✻ minimal-agentic-harness "),
-        ui.dim(f"{model.model_name} at {BASE_URL}"),
+        ui.dim(f"{agent.model.model_name} at {BASE_URL}"),
     )
     tool_names = ", ".join(definition.name for definition in tools.DEFINITIONS)
     ui.echo(ui.dim(f"tools: {tool_names} · /clear to start over · ctrl+d to quit"))
