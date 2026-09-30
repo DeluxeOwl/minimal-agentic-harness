@@ -3,6 +3,7 @@
 """Wire one agent to a terminal renderer and run the REPL."""
 
 import asyncio
+from collections.abc import Sequence
 from pathlib import Path
 
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -11,6 +12,21 @@ from pydantic_ai.providers.openai import OpenAIProvider
 import ui
 from agent import Agent, AgentToolset
 from tools import Grep, ListDir, ReadFile
+
+
+def load_agents_md(directories: Sequence[Path]) -> str:
+    """Read AGENTS.md from each directory.
+
+    Returns:
+        The file contents separated by ---, or an empty string if all are absent.
+
+    """
+    contents = []
+    for directory in directories:
+        agents_md = directory / "AGENTS.md"
+        if agents_md.is_file():
+            contents.append(agents_md.read_text(encoding="utf-8"))
+    return "\n\n---\n\n".join(contents)
 
 
 def main() -> None:
@@ -28,12 +44,15 @@ def main() -> None:
     # )
     ui.show_model_info(local_model)
 
+    cwd = Path.cwd()
     toolset = AgentToolset(
         model=local_model,
         system_prompt=f"""\
-You are a coding assistant in a terminal. The working directory is {Path.cwd()}.
+You are a coding assistant in a terminal. The working directory is {cwd}.
 Use the tools to look at files before you answer questions about them.
-Answer briefly, in Markdown.""",
+Answer briefly, in Markdown.
+
+{load_agents_md([cwd])}""",
         tools=[Grep, ReadFile, ListDir],
     )
     renderer = ui.AgentRenderer()
