@@ -46,7 +46,6 @@ def main() -> None:
 
     cwd = Path.cwd()
     toolset = AgentToolset(
-        model=local_model,
         system_prompt=f"""\
 You are a coding assistant in a terminal. The working directory is {cwd}.
 Use the tools to look at files before you answer questions about them.
@@ -56,7 +55,7 @@ Answer briefly, in Markdown.
         tools=[Grep, ReadFile, ListDir, Bash],
     )
     renderer = ui.AgentRenderer()
-    agent = Agent(toolset, emit=renderer.handle)
+    agent = Agent(toolset, model=local_model, emit=renderer.handle)
 
     ui.show_tools_info(definition.name for definition in agent.tool_definitions)
 

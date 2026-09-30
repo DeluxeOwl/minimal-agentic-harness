@@ -87,9 +87,8 @@ type AgentEvent = (
 
 @dataclass(frozen=True, kw_only=True)
 class AgentToolset:
-    """The model, system prompt, and tool classes supplied to an agent."""
+    """The system prompt and tool classes supplied to an agent."""
 
-    model: OpenAIChatModel
     system_prompt: str
     tools: Sequence[type[Tool]]
 
@@ -102,10 +101,14 @@ class Agent:
     """
 
     def __init__(
-        self, toolset: AgentToolset, *, emit: Callable[[AgentEvent], None]
+        self,
+        toolset: AgentToolset,
+        *,
+        model: OpenAIChatModel,
+        emit: Callable[[AgentEvent], None],
     ) -> None:
         """Use the supplied model, prompt, tools, and event handler."""
-        self.model = toolset.model
+        self.model = model
         self._emit = emit
         self.tool_definitions, self._tool_adapters = prepare_tools(toolset.tools)
         self._tools = ModelRequestParameters(function_tools=self.tool_definitions)
