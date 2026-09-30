@@ -1,6 +1,9 @@
 # Copyright (c) 2026 Andrei Surugiu
 
-"""A small terminal UI kit on top of Rich: paint text, stream output, show status.
+"""Terminal rendering for the harness, on top of Rich.
+
+The `show_*` helpers format model replies, tool results, and REPL messages.
+The agent decides when to call them. The primitives below handle the drawing.
 
 Paint text with a chainable style API. Every call returns a Rich `Text`, so
 painted pieces nest, and join with `+`::
@@ -29,6 +32,7 @@ unfinished tail and the status line repaint::
 
 from __future__ import annotations
 
+import json
 import readline  # ruff: ignore[unused-import] -- gives `input` line editing
 import time
 from typing import TYPE_CHECKING, ClassVar, Final, Self, final, overload, override
@@ -44,8 +48,10 @@ from rich.text import Text
 from rich.theme import Theme
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from types import TracebackType
 
+    from pydantic_ai import ModelResponsePart, ToolCallPart
     from rich.console import (
         ConsoleOptions,
         JustifyMethod,
@@ -77,6 +83,9 @@ PALETTE: Final[dict[str, tuple[str, str]]] = {
 
 CODE_THEME: Final = "monokai"
 """The Pygments theme for code blocks in markdown."""
+
+_PROMPT: Final = "❯ "  # ruff: ignore[ambiguous-unicode-character-string]
+_PREVIEW_LINES: Final = 3  # tool output to show; the model gets all of it
 
 _FRAMES: Final = "·✢✳✶✻✽✻✶✳✢"
 _FRAME_SECONDS: Final = 0.12
@@ -238,7 +247,7 @@ def echo(*objects: RenderableType) -> None:
     console.print(*objects)
 
 
-def ask(prompt: str = "") -> str | None:
+def ask(prompt: str = _PROMPT) -> str | None:
     """Read a line from the user, with line editing and history.
 
     The prompt is plain text. macOS Python uses libedit for line editing, and
@@ -497,3 +506,74 @@ class Live:
     def _render(self) -> RenderableType:
         gap: list[list[Segment]] = [[] for _ in range(self._gap)]
         return Group(SegmentLines(self._lines + gap, new_lines=True), self._status)
+
+
+def show_model_info(name: str, url: str) -> None:
+    """Show the harness banner, model name, and server URL."""
+    echo(
+        bold.bg("accent", " ✻ minimal-agentic-harness "),
+        dim(f"{name} at {url}"),
+    )
+
+
+def show_tools_info(names: Iterable[str]) -> None:
+    """Show the available tools and REPL command hints."""
+    echo(dim(f"tools: {', '.join(names)} · /clear to start over · ctrl+d to quit"))
+    echo()
+
+
+def show_cleared() -> None:
+    """Confirm that the conversation was cleared."""
+    echo(dim("  ⎿ Cleared the conversation"))
+
+
+def show_error(message: str) -> None:
+    """Show the reason a turn failed."""
+    echo(fg("error", f"  ⎿ {message}"))
+
+
+def show_turn_summary(seconds: float, tokens: int) -> None:
+    """Show the turn duration, output tokens, and tokens per second."""
+    speed = f"{tokens / seconds:.0f} tok/s"
+    echo()
+    echo(dim(f"✻ Worked for {seconds:.1f}s · {tokens} tokens · {speed}"))
+
+
+def show_response_part(
+    part: ModelResponsePart, live: Live, *, done: bool = False
+) -> None:
+    """Show part of a reply. Thoughts pass by under the status, text stays."""
+    match part.part_kind:
+        case "thinking" if done:
+            live.print(dim(f"✻ Thought for {live.elapsed:.1f}s"))
+        case "thinking":
+            live.status("Thinking", detail=dim.italic(part.content.strip()))
+        case "text" if part.content.strip():
+            live.status("Writing")
+            answer = markdown(part.content.strip())
+            live.stream(bullet("⏺", answer), final=done)
+        case "tool-call":
+            live.status(f"Calling {part.tool_name}")
+        case _:
+            pass
+
+
+def show_tool_result(
+    tool_call: ToolCallPart, output: str, live: Live, *, ok: bool
+) -> None:
+    """Show a tool call, like `⏺ read_file(path="README.md")`, and its output."""
+    arguments: dict[str, object] = tool_call.args_as_dict()
+    signature = ", ".join(
+        f"{key}={json.dumps(value, ensure_ascii=False)}"
+        for key, value in arguments.items()
+    )
+    lines = output.strip().splitlines() or ["(no output)"]
+    if len(lines) > _PREVIEW_LINES:
+        lines = [*lines[:_PREVIEW_LINES], f"… +{len(lines) - _PREVIEW_LINES} lines"]
+    live.print(
+        bullet(
+            fg("success" if ok else "error", "⏺"),
+            bold(tool_call.tool_name) + dim(f"({signature})"),
+        ),
+        bullet(dim("  ⎿"), fg("muted" if ok else "error", "\n".join(lines))),
+    )

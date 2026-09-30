@@ -10,7 +10,6 @@ conversation, and call the model again. Stop when a reply asks for no tools.
 from __future__ import annotations
 
 import asyncio
-import json
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -46,7 +45,6 @@ if TYPE_CHECKING:
     from pydantic_ai import (
         ModelMessage,
         ModelResponse,
-        ModelResponsePart,
         ToolCallPart,
     )
 
@@ -54,10 +52,6 @@ if TYPE_CHECKING:
 
 BASE_URL: Final = "http://127.0.0.1:8090/v1"
 """The llama.cpp server that `make serve-llm` starts."""
-
-PROMPT: Final = "❯ "  # ruff: ignore[ambiguous-unicode-character-string]
-PREVIEW_LINES: Final = 3
-"""Lines of tool output to show. The model gets all of it."""
 
 
 class Agent:
@@ -114,9 +108,9 @@ class Agent:
         ) as stream:
             async for event in stream:
                 if isinstance(event, PartStartEvent | PartDeltaEvent):
-                    show(stream.get().parts[event.index], live)
+                    ui.show_response_part(stream.get().parts[event.index], live)
                 elif isinstance(event, PartEndEvent):
-                    show(event.part, live, done=True)
+                    ui.show_response_part(event.part, live, done=True)
             return stream.get()
 
     def _run_tool(
@@ -127,46 +121,10 @@ class Agent:
         try:
             output = run_tool(self._tool_adapters, name, tool_call.args_as_json_str())
         except ModelRetry as error:
-            show_call(tool_call, error.message, live, ok=False)
+            ui.show_tool_result(tool_call, error.message, live, ok=False)
             return RetryPromptPart(error.message, tool_name=name, tool_call_id=call_id)
-        show_call(tool_call, output, live, ok=True)
+        ui.show_tool_result(tool_call, output, live, ok=True)
         return ToolReturnPart(name, output, tool_call_id=call_id)
-
-
-def show(part: ModelResponsePart, live: ui.Live, *, done: bool = False) -> None:
-    """Show part of a reply. Thoughts pass by under the status, text stays."""
-    match part.part_kind:
-        case "thinking" if done:
-            live.print(ui.dim(f"✻ Thought for {live.elapsed:.1f}s"))
-        case "thinking":
-            live.status("Thinking", detail=ui.dim.italic(part.content.strip()))
-        case "text" if part.content.strip():
-            live.status("Writing")
-            answer = ui.markdown(part.content.strip())
-            live.stream(ui.bullet("⏺", answer), final=done)
-        case "tool-call":
-            live.status(f"Calling {part.tool_name}")
-        case _:
-            pass
-
-
-def show_call(tool_call: ToolCallPart, output: str, live: ui.Live, *, ok: bool) -> None:
-    """Show a tool call, like `⏺ read_file(path="README.md")`, and its output."""
-    arguments: dict[str, object] = tool_call.args_as_dict()
-    signature = ", ".join(
-        f"{key}={json.dumps(value, ensure_ascii=False)}"
-        for key, value in arguments.items()
-    )
-    lines = output.strip().splitlines() or ["(no output)"]
-    if len(lines) > PREVIEW_LINES:
-        lines = [*lines[:PREVIEW_LINES], f"… +{len(lines) - PREVIEW_LINES} lines"]
-    live.print(
-        ui.bullet(
-            ui.fg("success" if ok else "error", "⏺"),
-            ui.bold(tool_call.tool_name) + ui.dim(f"({signature})"),
-        ),
-        ui.bullet(ui.dim("  ⎿"), ui.fg("muted" if ok else "error", "\n".join(lines))),
-    )
 
 
 def chat(event_loop: asyncio.Runner, agent: Agent, prompt: str) -> None:
@@ -177,14 +135,12 @@ def chat(event_loop: asyncio.Runner, agent: Agent, prompt: str) -> None:
         with ui.Live(hint="ctrl+c to interrupt") as live:
             event_loop.run(agent.run(prompt, live))
     except (KeyboardInterrupt, ModelAPIError, UnexpectedModelBehavior) as error:
-        ui.echo(ui.fg("error", f"  ⎿ {explain(error)}"))
+        ui.show_error(explain(error))
         return
     seconds = time.monotonic() - started
     replies = [m for m in agent.messages[before:] if m.kind == "response"]
     tokens = sum(reply.usage.output_tokens for reply in replies)
-    speed = f"{tokens / seconds:.0f} tok/s"
-    ui.echo()
-    ui.echo(ui.dim(f"✻ Worked for {seconds:.1f}s · {tokens} tokens · {speed}"))
+    ui.show_turn_summary(seconds, tokens)
 
 
 def explain(error: BaseException) -> str:
@@ -216,21 +172,16 @@ Use the tools to look at files before you answer questions about them.
 Answer briefly, in Markdown.""",
         tools=[Grep, ReadFile, ListDir],
     )
-    ui.echo(
-        ui.bold.bg("accent", " ✻ minimal-agentic-harness "),
-        ui.dim(f"{agent.model.model_name} at {BASE_URL}"),
-    )
-    tool_names = ", ".join(definition.name for definition in agent.tool_definitions)
-    ui.echo(ui.dim(f"tools: {tool_names} · /clear to start over · ctrl+d to quit"))
-    ui.echo()
+    ui.show_model_info(agent.model.model_name, BASE_URL)
+    ui.show_tools_info(definition.name for definition in agent.tool_definitions)
     with asyncio.Runner() as event_loop:
-        while (prompt := ui.ask(PROMPT)) is not None:
+        while (prompt := ui.ask()) is not None:
             command = prompt.strip()
             if command in {"/exit", "/quit"}:
                 break
             if command == "/clear":
                 agent.clear()
-                ui.echo(ui.dim("  ⎿ Cleared the conversation"))
+                ui.show_cleared()
             elif command:
                 chat(event_loop, agent, prompt)
             ui.echo()
