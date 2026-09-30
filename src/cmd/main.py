@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import asyncio
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
 from pydantic_ai import (
     ModelRequest,
@@ -45,27 +46,26 @@ if TYPE_CHECKING:
 
     from tools import Tool
 
-BASE_URL: Final = "http://127.0.0.1:8090/v1"
-"""The llama.cpp server that `make serve-llm` starts."""
+
+@dataclass(frozen=True, kw_only=True)
+class AgentToolset:
+    """The model, system prompt, and tool classes supplied to an agent."""
+
+    model: OpenAIChatModel
+    system_prompt: str
+    tools: Sequence[type[Tool]]
 
 
 class Agent:
     """Answer prompts with a model and tools, remembering the conversation."""
 
-    def __init__(
-        self,
-        *,
-        system_prompt: str,
-        tools: Sequence[type[Tool]],
-    ) -> None:
-        """Use the local model with the supplied prompt and tools."""
-        self.model = OpenAIChatModel(
-            "MiniCPM5-2B", provider=OpenAIProvider(base_url=BASE_URL, api_key="local")
-        )
-        self.tool_definitions, self._tool_adapters = prepare_tools(tools)
+    def __init__(self, toolset: AgentToolset) -> None:
+        """Use the model, prompt, and tools from the supplied toolset."""
+        self.model = toolset.model
+        self.tool_definitions, self._tool_adapters = prepare_tools(toolset.tools)
         self._tools = ModelRequestParameters(function_tools=self.tool_definitions)
         self.messages: list[ModelMessage] = [
-            ModelRequest(parts=[SystemPromptPart(system_prompt)])
+            ModelRequest(parts=[SystemPromptPart(toolset.system_prompt)])
         ]
 
     async def run(self, prompt: str, live: ui.Live) -> ModelResponse:
@@ -149,14 +149,19 @@ def chat(event_loop: asyncio.Runner, agent: Agent, prompt: str) -> None:
 
 def main() -> None:
     """Chat with the agent in the terminal, until ctrl+d."""
-    agent = Agent(
+    base_url = "http://127.0.0.1:8090/v1"
+    toolset = AgentToolset(
+        model=OpenAIChatModel(
+            "MiniCPM5-2B", provider=OpenAIProvider(base_url=base_url, api_key="local")
+        ),
         system_prompt=f"""\
 You are a coding assistant in a terminal. The working directory is {Path.cwd()}.
 Use the tools to look at files before you answer questions about them.
 Answer briefly, in Markdown.""",
         tools=[Grep, ReadFile, ListDir],
     )
-    ui.show_model_info(agent.model.model_name, BASE_URL)
+    agent = Agent(toolset)
+    ui.show_model_info(agent.model.model_name, base_url)
     ui.show_tools_info(definition.name for definition in agent.tool_definitions)
     with asyncio.Runner() as event_loop:
         while (prompt := ui.ask()) is not None:

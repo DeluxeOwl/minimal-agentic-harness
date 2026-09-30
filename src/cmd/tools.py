@@ -4,7 +4,8 @@
 
 A tool is a frozen dataclass. Its docstring tells the model what the tool
 does, its fields are the arguments (their docstrings describe them), and `run`
-does the work. To add a tool, write a class and pass it in `Agent(tools=[...])`.
+does the work. To add a tool, write a class and include it in the `tools` list
+of the `AgentToolset` passed to `Agent`.
 """
 
 import inspect
