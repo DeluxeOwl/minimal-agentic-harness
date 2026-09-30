@@ -12,6 +12,7 @@ import ui
 from agent import Agent, AgentToolset
 from prompt_processors import (
     add_agents_md,
+    add_skills,
     add_working_directory,
     prompt_processor,
 )
@@ -33,15 +34,13 @@ def main() -> None:
     )
     ui.show_model_info(local_model)
 
-    toolset = AgentToolset(
-        system_prompt=prompt_processor(
-            prompt="""\
+    system_prompt = prompt_processor(
+        prompt="""\
 You are a coding assistant in a terminal. Use the tools to look at files before
 you answer questions about them. Answer briefly, in Markdown.""",
-            processors=[add_working_directory, add_agents_md],
-        ),
-        tools=[Bash],
+        processors=[add_working_directory, add_agents_md, add_skills],
     )
+    toolset = AgentToolset(system_prompt=system_prompt, tools=[Bash])
     renderer = ui.AgentRenderer()
     agent = Agent(toolset, model=local_model, emit=renderer.handle)
 
@@ -55,6 +54,8 @@ you answer questions about them. Answer briefly, in Markdown.""",
             if command == "/clear":
                 agent.clear()
                 ui.show_cleared()
+            elif command == "/system":
+                ui.show_system_prompt(system_prompt)
             elif command:
                 with renderer.turn(hint="ctrl+c to interrupt"):
                     event_loop.run(agent.run(prompt))

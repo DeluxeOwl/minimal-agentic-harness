@@ -12,11 +12,16 @@ painted pieces nest, and join with `+`::
     ui.echo(ui.bold.fg("green", "✓"), ui.dim("saved in 1.2s"))
     badge = ui.bold.bg("purple")  # a style is a value: keep it, reuse it
     ui.echo(badge(" v2 "))
+    ui.echo(ui.bg("blue").blend().fill(" a banner the whole terminal wide "))
 
 A color is a name from `PALETTE` ("accent", "purple", "muted", ...) or any
 color that Rich knows ("magenta", "#ff8700", "color(93)"). A palette color has
 a light shade for text and a deep shade for backgrounds. `bg` also picks black
 or white text, whichever is easier to read on the background.
+
+A background stops at the last character of a line. `fill` pads it out to the
+edges of the terminal instead. `blend` mixes the background with the terminal's
+own background, so the color reads as translucent rather than as a hard slab.
 
 Show work in progress in a `Live` region at the bottom of the terminal.
 Printed and streamed output moves up into the normal scrollback, and only the
@@ -45,6 +50,7 @@ from pydantic_ai.exceptions import (
     ModelHTTPError,
 )
 from rich.color import Color, blend_rgb
+from rich.color_triplet import ColorTriplet
 from rich.console import Console, Group
 from rich.rule import Rule
 from rich.segment import Segment, SegmentLines
@@ -106,6 +112,8 @@ _SHIMMER_WIDTH: Final = 3.0  # characters on each side of the highlight
 _SHIMMER_GLOW: Final = "#f5f3ff"
 _DETAIL_LINES: Final = 3  # status detail lines to show, from the end
 _BRIGHT: Final = 128  # YIQ brightness above which black text reads better
+_TERMINAL_BG: Final = ColorTriplet(0x1E, 0x1E, 0x1E)  # what `blend` fades toward
+_FADE: Final = 0.65  # how far `blend` moves a background toward the terminal
 
 
 def _color(name: str, *, background: bool) -> Color:
@@ -199,6 +207,45 @@ class Paint:
             )
         return self._then(Style(bgcolor=background), text)
 
+    def blend(self, fade: float = _FADE) -> Paint:
+        """Fade the background toward the terminal, so it looks translucent.
+
+        Terminals have no alpha, so this mixes the background with the color the
+        terminal already shows behind the text. The result is a quieter shade
+        than the palette one. The text color is picked again if `bg` chose it.
+
+        Args:
+            fade: How much of the terminal shows through: 0 is no change, 1
+                leaves no trace of the color at all.
+
+        Returns:
+            A new paint. Painting with it leaves the background edge to edge
+            only with `fill`.
+
+        """
+        background = self._style.bgcolor
+        if background is None:
+            return self
+        blended = Color.from_triplet(
+            blend_rgb(background.get_truecolor(), _TERMINAL_BG, fade)
+        )
+        style = Style(bgcolor=blended)
+        if self._style.color == self._readable_on(background):
+            style += Style(color=self._readable_on(blended))
+        return Paint(self._style + style)
+
+    def fill(self, renderable: RenderableType) -> RenderableType:
+        """Paint the background across the whole terminal, not just the text.
+
+        Args:
+            renderable: What to paint. Its own styles win over this one.
+
+        Returns:
+            A renderable for `echo`, `Live.print`, or `Live.stream`.
+
+        """
+        return _Fill(renderable, self._style)
+
     def _then(self, style: Style, text: tuple[str | Text, ...]) -> Paint | Text:
         paint = Paint(self._style + style)
         return paint(*text) if text else paint
@@ -208,6 +255,31 @@ class Paint:
         red, green, blue = background.get_truecolor()
         brightness = (299 * red + 587 * green + 114 * blue) / 1000
         return Color.parse("#000000" if brightness > _BRIGHT else "#ffffff")
+
+
+@final
+class _Fill:
+    """A renderable whose background runs the full width of the terminal.
+
+    Rich stops a background at the last character of a line, so a painted block
+    of text looks ragged next to the edge. `_Fill` pads every line out to the
+    edges with spaces in the fill's style.
+    """
+
+    def __init__(self, renderable: RenderableType, style: Style) -> None:
+        self._renderable = renderable
+        self._style = style
+
+    def __rich_console__(
+        self, console: Console, options: ConsoleOptions
+    ) -> RenderResult:
+        for line in console.render_lines(self._renderable, options, pad=False):
+            width = sum(segment.cell_length for segment in line)
+            slack = options.max_width - width
+            yield from line
+            if slack > 0:
+                yield Segment(" " * slack, self._style)
+            yield Segment.line()
 
 
 _PLAIN: Final = Paint()
@@ -590,13 +662,30 @@ def show_model_info(model: OpenAIChatModel) -> None:
 
 def show_tools_info(names: Iterable[str]) -> None:
     """Show the available tools and REPL command hints."""
-    echo(dim(f"tools: {', '.join(names)} · /clear to start over · ctrl+d to quit"))
+    echo(
+        dim(
+            f"tools: {', '.join(names)} · /clear to start over"
+            " · /system to see the prompt · ctrl+d to quit"
+        )
+    )
     echo()
 
 
 def show_cleared() -> None:
     """Confirm that the conversation was cleared."""
     echo(dim("  ⎿ Cleared the conversation"))
+
+
+def show_system_prompt(prompt: str) -> None:
+    """Show the system prompt the agent is running with.
+
+    The prompt is display only. The agent already has it, and the command that
+    asks for it never reaches the model.
+    """
+    paint = bg("blue").blend()
+    echo()
+    echo(paint.bold.fill(f" system prompt · {len(prompt)} chars "))
+    echo(paint.fill(prompt))
 
 
 def _explain(error: BaseException) -> str:
