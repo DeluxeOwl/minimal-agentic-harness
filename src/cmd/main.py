@@ -11,7 +11,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 import ui
 from agent import Agent, AgentToolset
-from tools import Grep, ListDir, ReadFile
+from tools import Bash, Grep, ListDir, ReadFile
 
 
 def load_agents_md(directories: Sequence[Path]) -> str:
@@ -53,7 +53,7 @@ Use the tools to look at files before you answer questions about them.
 Answer briefly, in Markdown.
 
 {load_agents_md([cwd])}""",
-        tools=[Grep, ReadFile, ListDir],
+        tools=[Grep, ReadFile, ListDir, Bash],
     )
     renderer = ui.AgentRenderer()
     agent = Agent(toolset, emit=renderer.handle)

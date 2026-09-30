@@ -11,6 +11,7 @@ of the `AgentToolset` passed to `Agent`.
 import inspect
 import itertools
 import re
+import subprocess  # ruff: ignore[suspicious-subprocess-import] - Bash intentionally executes model-supplied commands.
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -48,6 +49,30 @@ class Tool(ABC):
             ModelRetry: Something went wrong that the model can fix.
 
         """
+
+
+@dataclass(frozen=True)
+class Bash(Tool):
+    """Run a bash command in the working directory.
+
+    Return the full combined stdout and stderr, plus the exit code.
+    """
+
+    command: str
+    """The bash command to execute."""
+
+    @override
+    def run(self) -> str:
+        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Executing commands is this tool's purpose.
+            ["/bin/bash", "-c", self.command],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        return f"Exit code: {result.returncode}\n{result.stdout}"
 
 
 @dataclass(frozen=True)
