@@ -44,16 +44,18 @@ src/
 └── transport/      # sends API requests
 ```
 
-- Show component interaction, control flow, or data flow with Mermaid:
+- Show component interaction, control flow, or data flow as an ASCII diagram (prefer ASCII over Mermaid):
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant UI
-    participant Daemon
-    User->>UI: choose command
-    UI->>Daemon: send expanded prompt
-    Daemon-->>UI: stream result
+```text
+User          UI             Daemon
+  |            |                |
+  | choose cmd |                |
+  |----------->|                |
+  |            | expanded prompt|
+  |            |--------------->|
+  |            |     result     |
+  |            |<---------------|
+  |<-----------|                |
 ```
 
 You may use one of these, you may use several, it is unlikely you will use all of them. Use your judgement and don't overwhelm the user.
