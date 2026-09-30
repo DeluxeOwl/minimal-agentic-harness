@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+from pathlib import Path
 
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -11,9 +12,13 @@ from pydantic_ai.providers.openai import OpenAIProvider
 import ui
 from agent import Agent, AgentToolset
 from prompt_processors import (
+    PROJECT_SKILLS_DIRECTORY,
+    USER_SKILLS_DIRECTORY,
     add_agents_md,
     add_skills,
     add_working_directory,
+    expand_skill_references,
+    load_skills,
     prompt_processor,
 )
 from tools import Bash
@@ -34,12 +39,14 @@ def main() -> None:
     )
     ui.show_model_info(local_model)
 
+    skills = load_skills([USER_SKILLS_DIRECTORY, Path.cwd() / PROJECT_SKILLS_DIRECTORY])
     system_prompt = prompt_processor(
         prompt="""\
 You are a coding assistant in a terminal. Use the tools to look at files before
 you answer questions about them. Answer briefly, in Markdown.""",
-        processors=[add_working_directory, add_agents_md, add_skills],
+        processors=[add_working_directory, add_agents_md, add_skills(skills)],
     )
+    expand_prompt = expand_skill_references(skills, on_load=ui.show_skill_loaded)
     toolset = AgentToolset(system_prompt=system_prompt, tools=[Bash])
     renderer = ui.AgentRenderer()
     agent = Agent(toolset, model=local_model, emit=renderer.handle)
@@ -53,12 +60,16 @@ you answer questions about them. Answer briefly, in Markdown.""",
                 break
             if command == "/clear":
                 agent.clear()
+                expand_prompt = expand_skill_references(
+                    skills, on_load=ui.show_skill_loaded
+                )
                 ui.show_cleared()
             elif command == "/system":
                 ui.show_system_prompt(system_prompt)
             elif command:
+                expanded = expand_prompt(prompt)
                 with renderer.turn(hint="ctrl+c to interrupt"):
-                    event_loop.run(agent.run(prompt))
+                    event_loop.run(agent.run(expanded))
             ui.echo()
 
 

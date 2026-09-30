@@ -705,6 +705,15 @@ def show_block(header: str, body: str, *, color: str = "accent") -> None:
     echo(block)
 
 
+def show_skill_loaded(name: str) -> None:
+    """Show that a skill was added to the prompt.
+
+    This indicator is display only. The skill body itself goes to the model;
+    the badge does not.
+    """
+    echo(bold.bg("purple", f" [skill] {name} loaded "))
+
+
 def show_system_prompt(prompt: str) -> None:
     """Show the system prompt the agent is running with.
 

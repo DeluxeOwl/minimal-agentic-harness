@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -32,6 +33,9 @@ the SKILL.md at the listed location before proceeding.
 When a skill references relative paths, resolve them against the skill's
 directory (the parent of SKILL.md) and use absolute paths in tool calls."""
 """How the model should use the catalog that follows."""
+
+SKILL_REFERENCE: Final = re.compile(r"\$([A-Za-z0-9][\w-]*)")
+"""Matches `$name`, the way a prompt asks for one skill by name."""
 
 
 def prompt_processor(
@@ -147,18 +151,102 @@ def skills_catalog(skills: Sequence[Skill]) -> str:
     return f"<available_skills>\n{entries}\n</available_skills>"
 
 
-def add_skills(prompt: str) -> str:
-    """Append the available skills from the project and user directories.
+def add_skills(skills: Sequence[Skill]) -> PromptProcessor:
+    """Make a processor that appends the skills as a catalog for the model.
 
     Returns:
-        The prompt with instructions and the catalog appended, or the prompt
-        unchanged when no skills are found.
+        A processor that appends the instructions and the catalog, or the
+        prompt unchanged when there are no skills.
 
     """
-    skills = load_skills([USER_SKILLS_DIRECTORY, Path.cwd() / PROJECT_SKILLS_DIRECTORY])
-    if not skills:
-        return prompt
-    return f"{prompt}\n\n{SKILLS_INSTRUCTIONS}\n\n{skills_catalog(skills)}"
+
+    def process(prompt: str) -> str:
+        if not skills:
+            return prompt
+        return f"{prompt}\n\n{SKILLS_INSTRUCTIONS}\n\n{skills_catalog(skills)}"
+
+    return process
+
+
+def expand_skill_references(
+    skills: Sequence[Skill],
+    *,
+    on_load: Callable[[str], None] | None = None,
+) -> PromptProcessor:
+    """Make a processor that prepends the skill each `$name` refers to.
+
+    Use this one on a user's prompt, not on the system prompt. Each name that
+    matches a skill is read when the prompt refers to it, so edits to the file
+    take effect on the next prompt. A name that matches no skill is left alone,
+    so ordinary text like `$HOME` is safe.
+
+    The bodies go into one `<skill name="...">` block at the start of the
+    prompt, not where `$name` appeared. A skill is loaded once per processor:
+    a name that a prompt already asked for, in this prompt or an earlier one,
+    is skipped, so the same body never goes to the model twice. Rebuild the
+    processor to load a skill again, like after the conversation is cleared.
+
+    Args:
+        skills: The skills to look up by name.
+        on_load: Called with each skill name as it is read, for display.
+
+    Returns:
+        A processor that prepends a `<skill name="...">` block for each new
+        `$name`, or the prompt unchanged when nothing new matches.
+
+    """
+    by_name = {skill.name: skill for skill in skills}
+    loaded: set[str] = set()
+
+    def process(prompt: str) -> str:
+        blocks: list[str] = []
+        for match in SKILL_REFERENCE.finditer(prompt):
+            name = match.group(1)
+            if name in loaded:
+                continue
+            skill = by_name.get(name)
+            body = _skill_body(skill) if skill is not None else None
+            if skill is None or body is None:
+                continue
+            loaded.add(name)
+            blocks.append(f'<skill name="{_escape(skill.name)}">\n{body}\n</skill>')
+            if on_load is not None:
+                on_load(name)
+        if not blocks:
+            return prompt
+        return "\n\n".join([*blocks, prompt])
+
+    return process
+
+
+def _skill_body(skill: Skill) -> str | None:
+    """Read the body of a skill, without its frontmatter.
+
+    Returns:
+        The body text, or None when the file can't be read.
+
+    """
+    try:
+        text = skill.location.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    return _without_frontmatter(text).strip()
+
+
+def _without_frontmatter(text: str) -> str:
+    """Drop the frontmatter block from a SKILL.md file.
+
+    Returns:
+        Everything after the closing `---`, or the whole text without one.
+
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return text
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            return "\n".join(lines[index + 1 :])
+    return text
 
 
 def _read_skill(path: Path) -> Skill | None:
