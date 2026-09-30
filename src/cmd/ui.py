@@ -2,8 +2,8 @@
 
 """Terminal rendering for the harness, on top of Rich.
 
-The `show_*` helpers format model replies, tool results, and REPL messages.
-The agent decides when to call them. The primitives below handle the drawing.
+`AgentRenderer` turns agent events into calls to the `show_*` helpers. It owns
+each turn's live region, error display, and footer. The primitives draw on Rich.
 
 Paint text with a chainable style API. Every call returns a Rich `Text`, so
 painted pieces nest, and join with `+`::
@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import readline  # ruff: ignore[unused-import] -- gives `input` line editing
 import time
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, ClassVar, Final, Self, final, overload, override
 
 import rich.live
@@ -51,8 +52,10 @@ from rich.style import Style
 from rich.text import Text
 from rich.theme import Theme
 
+from agent import ModelFinished, ModelStarted, PartUpdated, ToolFinished, ToolStarted
+
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Generator, Iterable
     from types import TracebackType
 
     from pydantic_ai import ModelResponsePart, ToolCallPart
@@ -63,6 +66,8 @@ if TYPE_CHECKING:
         RenderResult,
     )
     from rich.markdown import MarkdownElement
+
+    from agent import AgentEvent
 
 PALETTE: Final[dict[str, tuple[str, str]]] = {
     # Roles. Paint with these, and the look changes in one place.
@@ -512,6 +517,68 @@ class Live:
         return Group(SegmentLines(self._lines + gap, new_lines=True), self._status)
 
 
+@final
+class AgentRenderer:
+    """Render agent events across turns, with a fresh live region for each turn."""
+
+    def __init__(self) -> None:
+        """Prepare an event handler without opening a live region."""
+        self._live: Live | None = None
+        self._tokens = 0
+
+    @contextmanager
+    def turn(self, *, hint: str = "") -> Generator[None]:
+        """Open a live region, then show the turn's summary or error.
+
+        Yields:
+            Control to the caller that runs the agent.
+
+        Raises:
+            RuntimeError: Another turn already owns the live region.
+
+        """
+        if self._live is not None:
+            message = "A renderer turn is already open."
+            raise RuntimeError(message)
+
+        started = time.monotonic()
+        self._tokens = 0
+        try:
+            with Live(hint=hint) as live:
+                self._live = live
+                yield
+        except (Exception, KeyboardInterrupt) as error:  # ruff: ignore[blind-except]
+            show_error(error)
+        else:
+            show_turn_summary(time.monotonic() - started, self._tokens)
+        finally:
+            self._live = None
+
+    def handle(self, event: AgentEvent) -> None:
+        """Show an event in the current turn and collect its token usage.
+
+        Raises:
+            RuntimeError: No turn owns a live region.
+
+        """
+        live = self._live
+        if live is None:
+            message = "Open a renderer turn before handling agent events."
+            raise RuntimeError(message)
+
+        match event:
+            case ModelStarted():
+                live.status("Thinking")
+            case PartUpdated(part=part, done=done):
+                show_response_part(part, live, done=done)
+            case ModelFinished(usage=usage):
+                self._tokens += usage.output_tokens
+            case ToolStarted(tool_call=tool_call):
+                live.status(f"Running {tool_call.tool_name}")
+            case ToolFinished(tool_call=tool_call, output=output, is_error=is_error):
+                show_tool_result(tool_call, output, live, is_error=is_error)
+
+
 def show_model_info(name: str, url: str) -> None:
     """Show the harness banner, model name, and server URL."""
     echo(
@@ -596,8 +663,8 @@ def show_tool_result(
         lines = [*lines[:_PREVIEW_LINES], f"… +{len(lines) - _PREVIEW_LINES} lines"]
     live.print(
         bullet(
-            fg("success" if is_error else "error", "⏺"),
+            fg("error" if is_error else "success", "⏺"),
             bold(tool_call.tool_name) + dim(f"({signature})"),
         ),
-        bullet(dim("  ⎿"), fg("muted" if is_error else "error", "\n".join(lines))),
+        bullet(dim("  ⎿"), fg("error" if is_error else "muted", "\n".join(lines))),
     )
