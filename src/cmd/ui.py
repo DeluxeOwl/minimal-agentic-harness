@@ -39,6 +39,10 @@ from typing import TYPE_CHECKING, ClassVar, Final, Self, final, overload, overri
 
 import rich.live
 import rich.markdown
+from pydantic_ai.exceptions import (
+    ModelAPIError,
+    ModelHTTPError,
+)
 from rich.color import Color, blend_rgb
 from rich.console import Console, Group
 from rich.rule import Rule
@@ -527,9 +531,29 @@ def show_cleared() -> None:
     echo(dim("  ⎿ Cleared the conversation"))
 
 
-def show_error(message: str) -> None:
+def _explain(error: BaseException) -> str:
+    """Say why a turn failed, and what to do about it.
+
+    Returns:
+        One line for the user.
+
+    """
+    match error:
+        case KeyboardInterrupt():
+            return "Interrupted"
+        case ModelHTTPError() if "exceed_context_size_error" in str(error.body):
+            return "The conversation is too long for the model. /clear to start over."
+        case ModelHTTPError():
+            return f"The model server failed ({error.status_code}): {error.body}"
+        case ModelAPIError():
+            return "No answer from remote url. Is `make serve-llm` running?"
+        case _:
+            return f"The model replied with something unexpected: {error}"
+
+
+def show_error(error: BaseException) -> None:
     """Show the reason a turn failed."""
-    echo(fg("error", f"  ⎿ {message}"))
+    echo(fg("error", f"  ⎿ {_explain(error)}"))
 
 
 def show_turn_summary(seconds: float, tokens: int) -> None:

@@ -26,11 +26,6 @@ from pydantic_ai import (
     UserPromptPart,
 )
 from pydantic_ai.direct import model_request_stream
-from pydantic_ai.exceptions import (
-    ModelAPIError,
-    ModelHTTPError,
-    UnexpectedModelBehavior,
-)
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -89,9 +84,12 @@ class Agent:
                 response = await self._call_model(live)
                 self.messages.append(response)
                 tool_calls = [p for p in response.parts if p.part_kind == "tool-call"]
+
                 if not tool_calls:
                     return response
+
                 results = [self._run_tool(tool_call, live) for tool_call in tool_calls]
+
                 self.messages.append(ModelRequest(parts=results))
         except BaseException:
             del self.messages[before:]
@@ -103,6 +101,7 @@ class Agent:
 
     async def _call_model(self, live: ui.Live) -> ModelResponse:
         live.status("Thinking")
+
         async with model_request_stream(
             self.model, self.messages, model_request_parameters=self._tools
         ) as stream:
@@ -118,11 +117,13 @@ class Agent:
     ) -> ToolReturnPart | RetryPromptPart:
         live.status(f"Running {tool_call.tool_name}")
         name, call_id = tool_call.tool_name, tool_call.tool_call_id
+
         try:
             output = run_tool(self._tool_adapters, name, tool_call.args_as_json_str())
         except ModelRetry as error:
             ui.show_tool_result(tool_call, error.message, live, is_error=False)
             return RetryPromptPart(error.message, tool_name=name, tool_call_id=call_id)
+
         ui.show_tool_result(tool_call, output, live, is_error=True)
         return ToolReturnPart(name, output, tool_call_id=call_id)
 
@@ -131,36 +132,19 @@ def chat(event_loop: asyncio.Runner, agent: Agent, prompt: str) -> None:
     """Render one agent turn, with its error or token and timing footer."""
     before = len(agent.messages)
     started = time.monotonic()
+
     try:
         with ui.Live(hint="ctrl+c to interrupt") as live:
             event_loop.run(agent.run(prompt, live))
-    except (KeyboardInterrupt, ModelAPIError, UnexpectedModelBehavior) as error:
-        ui.show_error(explain(error))
+    except Exception as error:  # ruff: ignore[blind-except]
+        ui.show_error(error)
         return
+
     seconds = time.monotonic() - started
     replies = [m for m in agent.messages[before:] if m.kind == "response"]
     tokens = sum(reply.usage.output_tokens for reply in replies)
+
     ui.show_turn_summary(seconds, tokens)
-
-
-def explain(error: BaseException) -> str:
-    """Say why a turn failed, and what to do about it.
-
-    Returns:
-        One line for the user.
-
-    """
-    match error:
-        case KeyboardInterrupt():
-            return "Interrupted"
-        case ModelHTTPError() if "exceed_context_size_error" in str(error.body):
-            return "The conversation is too long for the model. /clear to start over."
-        case ModelHTTPError():
-            return f"The model server failed ({error.status_code}): {error.body}"
-        case ModelAPIError():
-            return f"No answer from {BASE_URL}. Is `make serve-llm` running?"
-        case _:
-            return f"The model replied with something unexpected: {error}"
 
 
 def main() -> None:
