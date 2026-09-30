@@ -161,8 +161,10 @@ Answer briefly, in Markdown.""",
         tools=[Grep, ReadFile, ListDir],
     )
     agent = Agent(toolset)
+
     ui.show_model_info(agent.model.model_name, base_url)
     ui.show_tools_info(definition.name for definition in agent.tool_definitions)
+
     with asyncio.Runner() as event_loop:
         while (prompt := ui.ask()) is not None:
             command = prompt.strip()
