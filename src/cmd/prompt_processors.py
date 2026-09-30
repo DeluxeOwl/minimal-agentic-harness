@@ -14,11 +14,6 @@ if TYPE_CHECKING:
 
 type PromptProcessor = Callable[[str], str]
 
-PROJECT_SKILLS_DIRECTORY: Final = Path(".agents/skills")
-"""Project-level skills, relative to the working directory."""
-
-USER_SKILLS_DIRECTORY: Final = Path.home() / ".agent/skills"
-"""User-level skills, shared by every project."""
 
 SKILL_FILENAME: Final = "SKILL.md"
 """The file every skill directory must contain."""
