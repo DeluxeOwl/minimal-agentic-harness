@@ -559,7 +559,7 @@ def show_response_part(
 
 
 def show_tool_result(
-    tool_call: ToolCallPart, output: str, live: Live, *, ok: bool
+    tool_call: ToolCallPart, output: str, live: Live, *, is_error: bool
 ) -> None:
     """Show a tool call, like `⏺ read_file(path="README.md")`, and its output."""
     arguments: dict[str, object] = tool_call.args_as_dict()
@@ -572,8 +572,8 @@ def show_tool_result(
         lines = [*lines[:_PREVIEW_LINES], f"… +{len(lines) - _PREVIEW_LINES} lines"]
     live.print(
         bullet(
-            fg("success" if ok else "error", "⏺"),
+            fg("success" if is_error else "error", "⏺"),
             bold(tool_call.tool_name) + dim(f"({signature})"),
         ),
-        bullet(dim("  ⎿"), fg("muted" if ok else "error", "\n".join(lines))),
+        bullet(dim("  ⎿"), fg("muted" if is_error else "error", "\n".join(lines))),
     )

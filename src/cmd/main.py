@@ -121,9 +121,9 @@ class Agent:
         try:
             output = run_tool(self._tool_adapters, name, tool_call.args_as_json_str())
         except ModelRetry as error:
-            ui.show_tool_result(tool_call, error.message, live, ok=False)
+            ui.show_tool_result(tool_call, error.message, live, is_error=False)
             return RetryPromptPart(error.message, tool_name=name, tool_call_id=call_id)
-        ui.show_tool_result(tool_call, output, live, ok=True)
+        ui.show_tool_result(tool_call, output, live, is_error=True)
         return ToolReturnPart(name, output, tool_call_id=call_id)
 
 
