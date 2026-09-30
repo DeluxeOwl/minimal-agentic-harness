@@ -3,56 +3,44 @@
 """Wire one agent to a terminal renderer and run the REPL."""
 
 import asyncio
-from collections.abc import Sequence
-from pathlib import Path
+import os
 
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 import ui
 from agent import Agent, AgentToolset
-from tools import Bash, Grep, ListDir, ReadFile
-
-
-def load_agents_md(directories: Sequence[Path]) -> str:
-    """Read AGENTS.md from each directory.
-
-    Returns:
-        The file contents separated by ---, or an empty string if all are absent.
-
-    """
-    contents = []
-    for directory in directories:
-        agents_md = directory / "AGENTS.md"
-        if agents_md.is_file():
-            contents.append(agents_md.read_text(encoding="utf-8"))
-    return "\n\n---\n\n".join(contents)
+from prompt_processors import (
+    add_agents_md,
+    add_working_directory,
+    prompt_processor,
+)
+from tools import Bash
 
 
 def main() -> None:
     """Chat with the agent in the terminal, until ctrl+d."""
-    local_model = OpenAIChatModel(
-        "MiniCPM5-2B",
-        provider=OpenAIProvider(base_url="http://127.0.0.1:8090/v1", api_key="local"),
-    )
-    # smart_model_dont_delete = OpenAIChatModel(
-    #     "deepseek/deepseek-v4.1-flash",
-    #     provider=OpenAIProvider(
-    #         base_url="https://openrouter.ai/api/v1",
-    #         api_key=os.getenv("OPENROUTER_API_KEY"),
-    #     ),
+    # local_model = OpenAIChatModel(
+    #     "MiniCPM5-2B",
+    #     provider=OpenAIProvider(base_url="http://127.0.0.1:8090/v1", api_key="local"),
     # )
+    local_model = OpenAIChatModel(
+        "deepseek/deepseek-v4.1-flash",
+        provider=OpenAIProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+        ),
+    )
     ui.show_model_info(local_model)
 
-    cwd = Path.cwd()
     toolset = AgentToolset(
-        system_prompt=f"""\
-You are a coding assistant in a terminal. The working directory is {cwd}.
-Use the tools to look at files before you answer questions about them.
-Answer briefly, in Markdown.
-
-{load_agents_md([cwd])}""",
-        tools=[Grep, ReadFile, ListDir, Bash],
+        system_prompt=prompt_processor(
+            prompt="""\
+You are a coding assistant in a terminal. Use the tools to look at files before
+you answer questions about them. Answer briefly, in Markdown.""",
+            processors=[add_working_directory, add_agents_md],
+        ),
+        tools=[Bash],
     )
     renderer = ui.AgentRenderer()
     agent = Agent(toolset, model=local_model, emit=renderer.handle)
