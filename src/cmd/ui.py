@@ -59,6 +59,7 @@ if TYPE_CHECKING:
     from types import TracebackType
 
     from pydantic_ai import ModelResponsePart, ToolCallPart
+    from pydantic_ai.models.openai import OpenAIChatModel
     from rich.console import (
         ConsoleOptions,
         JustifyMethod,
@@ -579,11 +580,11 @@ class AgentRenderer:
                 show_tool_result(tool_call, output, live, is_error=is_error)
 
 
-def show_model_info(name: str, url: str) -> None:
+def show_model_info(model: OpenAIChatModel) -> None:
     """Show the harness banner, model name, and server URL."""
     echo(
         bold.bg("accent", " ✻ minimal-agentic-harness "),
-        dim(f"{name} at {url}"),
+        dim(f"{model.model_name} at {model.base_url}"),
     )
 
 

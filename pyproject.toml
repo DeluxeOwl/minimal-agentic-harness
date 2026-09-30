@@ -27,6 +27,7 @@ src = ["src", "src/cmd"]
 preview = true
 select = ["ALL"]
 ignore = [
+    "commented-out-code",
     # Ruff's formatter is incompatible with these lint rules.
     "missing-trailing-comma",
     "prohibited-trailing-comma",

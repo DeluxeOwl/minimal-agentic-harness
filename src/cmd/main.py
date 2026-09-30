@@ -19,7 +19,14 @@ def main() -> None:
         "MiniCPM5-2B",
         provider=OpenAIProvider(base_url="http://127.0.0.1:8090/v1", api_key="local"),
     )
-    ui.show_model_info(local_model.model_name, local_model.base_url)
+    # smart_model_dont_delete = OpenAIChatModel(
+    #     "deepseek/deepseek-v4.1-flash",
+    #     provider=OpenAIProvider(
+    #         base_url="https://openrouter.ai/api/v1",
+    #         api_key=os.getenv("OPENROUTER_API_KEY"),
+    #     ),
+    # )
+    ui.show_model_info(local_model)
 
     toolset = AgentToolset(
         model=local_model,
