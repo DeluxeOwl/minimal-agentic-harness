@@ -51,6 +51,8 @@ ignore = [
 # These are the modules of a standalone script, not an importable package named
 # like stdlib cmd. The script imports its sibling modules directly.
 "src/cmd/*.py" = ["implicit-namespace-package"]
+# Tests use the standard-library runner, not pytest.
+"tests/*.py" = ["pytest-unittest-assertion"]
 
 [tool.ruff.lint.flake8-type-checking]
 strict = true

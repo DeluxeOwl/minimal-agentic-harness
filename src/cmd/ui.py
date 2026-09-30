@@ -55,6 +55,7 @@ from rich.console import Console, Group
 from rich.rule import Rule
 from rich.segment import Segment, SegmentLines
 from rich.style import Style
+from rich.syntax import Syntax
 from rich.text import Text
 from rich.theme import Theme
 
@@ -98,7 +99,7 @@ PALETTE: Final[dict[str, tuple[str, str]]] = {
 """Named colors, as (shade for text, shade for backgrounds)."""
 
 CODE_THEME: Final = "monokai"
-"""The Pygments theme for code blocks in markdown."""
+"""The Pygments theme for Markdown code blocks and the system prompt."""
 
 _PROMPT: Final = "❯ "  # ruff: ignore[ambiguous-unicode-character-string]
 _PREVIEW_LINES: Final = 3  # tool output to show; the model gets all of it
@@ -676,16 +677,41 @@ def show_cleared() -> None:
     echo(dim("  ⎿ Cleared the conversation"))
 
 
+def show_block(header: str, body: str, *, color: str = "accent") -> None:
+    """Show a titled block of literal text, shaded like a code block.
+
+    Markup and Markdown in `body` are not interpreted, so it is safe for text
+    that came from the model or a file.
+
+    Args:
+        header: The title line, shown bold at the top of the block.
+        body: The text to show inside the block.
+        color: A name from `PALETTE`, or any color Rich knows, for the header.
+
+    """
+    block = Syntax(
+        f"{header}\n\n{body}",
+        "text",
+        theme=CODE_THEME,
+        word_wrap=True,
+        padding=1,
+    )
+    block.stylize_range(
+        Style(bold=True, color=_color(color, background=False)),
+        (1, 0),
+        (1, len(header)),
+    )
+    echo()
+    echo(block)
+
+
 def show_system_prompt(prompt: str) -> None:
     """Show the system prompt the agent is running with.
 
     The prompt is display only. The agent already has it, and the command that
     asks for it never reaches the model.
     """
-    paint = bg("blue").blend()
-    echo()
-    echo(paint.bold.fill(f" system prompt · {len(prompt)} chars "))
-    echo(paint.fill(prompt))
+    show_block(f"system prompt · {len(prompt)} chars", prompt, color="accent")
 
 
 def _explain(error: BaseException) -> str:
