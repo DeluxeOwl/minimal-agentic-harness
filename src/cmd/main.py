@@ -51,7 +51,6 @@ def main() -> None:
             base_url="https://openrouter.ai/api/v1",
             api_key=os.getenv("OPENROUTER_API_KEY"),
         ),
-        # pydantic-ai's ModelSettings.timeout is `int | float | Any`.
         settings=OpenAIChatModelSettings(  # type: ignore[misc]
             extra_body={"session_id": str(uuid4())},
         ),
