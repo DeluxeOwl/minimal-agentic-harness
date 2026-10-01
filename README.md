@@ -1,3 +1,3 @@
 # minimal-agentic-harness
 
-See the [attached presentation](./presentation.html).
+See the [attached presentation](./index.html).
