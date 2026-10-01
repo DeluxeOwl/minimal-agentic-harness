@@ -663,18 +663,8 @@ def show_model_info(model: OpenAIChatModel) -> None:
 
 def show_tools_info(names: Iterable[str]) -> None:
     """Show the available tools and REPL command hints."""
-    echo(
-        dim(
-            f"tools: {', '.join(names)} · /clear to start over"
-            " · /system to see the prompt · ctrl+d to quit"
-        )
-    )
+    echo(dim(f"tools: {', '.join(names)} · /system to see the prompt · ctrl+d to quit"))
     echo()
-
-
-def show_cleared() -> None:
-    """Confirm that the conversation was cleared."""
-    echo(dim("  ⎿ Cleared the conversation"))
 
 
 def show_block(header: str, body: str, *, color: str = "accent") -> None:
@@ -734,7 +724,7 @@ def _explain(error: BaseException) -> str:
         case KeyboardInterrupt():
             return "Interrupted"
         case ModelHTTPError() if "exceed_context_size_error" in str(error.body):
-            return "The conversation is too long for the model. /clear to start over."
+            return "The conversation is too long for the model."
         case ModelHTTPError():
             return f"The model server failed ({error.status_code}): {error.body}"
         case ModelAPIError():

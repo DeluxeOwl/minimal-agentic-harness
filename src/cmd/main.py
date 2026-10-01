@@ -3,6 +3,7 @@
 """Wire one agent to a terminal renderer and run the REPL."""
 
 import asyncio
+import os
 from collections.abc import Sequence
 from pathlib import Path
 from uuid import uuid4
@@ -28,9 +29,6 @@ from tools import Bash
 def user_prompt_processors(skills: Sequence[Skill]) -> list[PromptProcessor]:
     """Build the processors that run on the user's prompt each turn.
 
-    Rebuild the list whenever the conversation is cleared, because
-    expand_skill_references remembers the skills it has already loaded.
-
     Returns:
         The user-prompt pipeline, in the order it runs.
 
@@ -40,23 +38,24 @@ def user_prompt_processors(skills: Sequence[Skill]) -> list[PromptProcessor]:
 
 def main() -> None:
     """Chat with the agent in the terminal, until ctrl+d."""
+    # local_model = OpenAIChatModel(
+    #     "MiniCPM5-2B",
+    #     provider=OpenAIProvider(base_url="http://127.0.0.1:8090/v1", api_key="local"),
+    #     settings=OpenAIChatModelSettings(
+    #         extra_body={"session_id": str(uuid4())},
+    #     ),
+    # )
     local_model = OpenAIChatModel(
-        "MiniCPM5-2B",
-        provider=OpenAIProvider(base_url="http://127.0.0.1:8090/v1", api_key="local"),
-        settings=OpenAIChatModelSettings(
+        "deepseek/deepseek-v4.1-flash",
+        provider=OpenAIProvider(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+        ),
+        # pydantic-ai's ModelSettings.timeout is `int | float | Any`.
+        settings=OpenAIChatModelSettings(  # type: ignore[misc]
             extra_body={"session_id": str(uuid4())},
         ),
     )
-    # local_model = OpenAIChatModel(
-    #     "deepseek/deepseek-v4.1-flash",
-    #     provider=OpenAIProvider(
-    #         base_url="https://openrouter.ai/api/v1",
-    #         api_key=os.getenv("OPENROUTER_API_KEY"),
-    #     ),
-    #     settings=OpenAIChatModelSettings(
-    #        extra_body={"session_id": str(uuid4())},
-    #    ),
-    # )
     ui.show_model_info(local_model)
 
     skills = load_skills([Path.cwd() / Path(".agents/skills")])
@@ -82,11 +81,7 @@ you answer questions about them. Answer briefly, in Markdown.""",
             command = prompt.strip()
             if command in {"/exit", "/quit"}:
                 break
-            if command == "/clear":
-                agent.clear()
-                user_processors = user_prompt_processors(skills)
-                ui.show_cleared()
-            elif command == "/system":
+            if command == "/system":
                 ui.show_system_prompt(system_prompt)
             elif command:
                 expanded = prompt_processor(prompt=prompt, processors=user_processors)

@@ -179,7 +179,7 @@ def expand_skill_references(
     prompt, not where `$name` appeared. A skill is loaded once per processor:
     a name that a prompt already asked for, in this prompt or an earlier one,
     is skipped, so the same body never goes to the model twice. Rebuild the
-    processor to load a skill again, like after the conversation is cleared.
+    processor to load a skill again.
 
     Args:
         skills: The skills to look up by name.

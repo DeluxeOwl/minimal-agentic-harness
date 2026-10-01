@@ -143,10 +143,6 @@ class Agent:
             del self.messages[before:]
             raise
 
-    def clear(self) -> None:
-        """Forget the conversation, keeping the injected system prompt."""
-        del self.messages[1:]
-
     async def _call_model(self) -> ModelResponse:
         self._emit(ModelStarted())
 
