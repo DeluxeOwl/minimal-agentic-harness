@@ -48,11 +48,7 @@ agent will see.""",
 """The agents that `SpawnAgent` can start, by name."""
 
 
-def _discard(_agent: str, _event: AgentEvent) -> None:
-    """Drop a subagent's event. This is `preview` until `main()` sets it."""
-
-
-preview: Callable[[str, AgentEvent], None] = _discard
+preview: Callable[[str, AgentEvent], None] = lambda _agent, _event: None
 """Receives a running subagent's name and each of its events. `main()` sets it."""
 
 

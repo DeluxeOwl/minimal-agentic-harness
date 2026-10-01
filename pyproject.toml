@@ -28,6 +28,7 @@ preview = true
 select = ["ALL"]
 ignore = [
     "commented-out-code",
+    "lambda-assignment",
     # Ruff's formatter is incompatible with these lint rules.
     "missing-trailing-comma",
     "prohibited-trailing-comma",
