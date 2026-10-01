@@ -710,7 +710,12 @@ def show_system_prompt(prompt: str) -> None:
     The prompt is display only. The agent already has it, and the command that
     asks for it never reaches the model.
     """
-    show_block(f"system prompt · {len(prompt)} chars", prompt, color="accent")
+    tokens = len(prompt) // 4
+    show_block(
+        f"system prompt · {len(prompt)} chars · ~{tokens} tokens",
+        prompt,
+        color="accent",
+    )
 
 
 def _explain(error: BaseException) -> str:
