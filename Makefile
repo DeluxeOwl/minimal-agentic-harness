@@ -1,4 +1,4 @@
-.PHONY: run format check serve-llm
+.PHONY: run explore format check serve-llm
 
 # MiniCPM5-2B with its DSpark draft model, served by llama.cpp.
 MINICPM_DOCS := docs/minicpm5-dspark-llama-cpp/README.md
@@ -7,6 +7,11 @@ MINICPM_DRAFT := MiniCPM5-2.6B-DSpark.gguf
 
 run:
 	uv run --locked src/cmd/main.py
+
+# MiniCPM on this machine, with tools that only read files: list_dir, read_file,
+# and grep. No skills and no memory, so it works offline. Start make serve-llm first.
+explore:
+	uv run --locked src/cmd/main.py --explore
 
 # ruff format does not sort imports. Import sorting is the I001 lint rule.
 format:
