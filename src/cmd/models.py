@@ -1,7 +1,5 @@
 # Copyright (c) 2026 Andrei Surugiu
 
-"""The models an agent can run on: one in the cloud, one on this machine."""
-
 import os
 from typing import Final
 from uuid import uuid4

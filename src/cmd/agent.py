@@ -1,12 +1,5 @@
 # Copyright (c) 2026 Andrei Surugiu
 
-"""An agent loop that reports its work through events.
-
-Send the conversation and tools to the model. If the reply asks for tools,
-run them, add their results, and call the model again. Stop when a reply asks
-for no tools. Rendering belongs to the event handler, not this loop.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -46,35 +39,27 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ModelStarted:
-    """The agent is about to request a reply from the model."""
+    pass
 
 
 @dataclass(frozen=True, kw_only=True)
 class PartUpdated:
-    """The current contents of a response part, including its final update."""
-
     part: ModelResponsePart
     done: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
 class ModelFinished:
-    """One model call finished, with its final token usage."""
-
     usage: RequestUsage
 
 
 @dataclass(frozen=True, kw_only=True)
 class ToolStarted:
-    """The agent is about to run a tool call."""
-
     tool_call: ToolCallPart
 
 
 @dataclass(frozen=True, kw_only=True)
 class ToolFinished:
-    """A tool returned output, or a reason for the model to retry."""
-
     tool_call: ToolCallPart
     output: str
     is_error: bool
@@ -87,33 +72,18 @@ type AgentEvent = (
 
 @dataclass(frozen=True, kw_only=True)
 class AgentToolset:
-    """The system prompt and tool classes supplied to an agent."""
-
     system_prompt: str
     tools: Sequence[type[Tool]]
 
 
 @dataclass(frozen=True, kw_only=True)
 class AgentSpec:
-    """An agent, written down: a model and the toolset it works with.
-
-    A spec never changes, so one spec can start any number of agents, and each
-    of them begins with a fresh conversation.
-    """
-
     model: OpenAIChatModel
     toolset: AgentToolset
 
 
 class Agent:
-    """Answer prompts with a model and tools, remembering the conversation.
-
-    Run one turn at a time per instance. The synchronous event handler receives
-    events in order; an exception from the handler fails the turn.
-    """
-
     def __init__(self, spec: AgentSpec, *, emit: Callable[[AgentEvent], None]) -> None:
-        """Start a fresh conversation from a spec, reporting to an event handler."""
         self.model = spec.model
         self._emit = emit
         self.tool_definitions, self._tool_adapters = prepare_tools(spec.toolset.tools)
@@ -123,17 +93,9 @@ class Agent:
         ]
 
     async def run(self, prompt: str) -> ModelResponse:
-        """Answer a prompt, calling tools until the model has finished.
-
-        A failed or cancelled turn leaves the conversation as it was.
-
-        Returns:
-            The model's final reply, without tool calls.
-
-        """
         before = len(self.messages)
         self.messages.append(ModelRequest(parts=[UserPromptPart(prompt)]))
-        try:  # ruff: ignore[too-many-statements-in-try-clause] -- one atomic turn
+        try:  # ruff: ignore[too-many-statements-in-try-clause]
             while True:
                 response = await self._call_model()
                 self.messages.append(response)

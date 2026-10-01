@@ -1,7 +1,5 @@
 # Copyright (c) 2026 Andrei Surugiu
 
-"""Wire one agent to a terminal renderer and run the REPL."""
-
 import asyncio
 from collections.abc import Sequence
 from pathlib import Path
@@ -24,17 +22,10 @@ from tools import Bash
 
 
 def user_prompt_processors(skills: Sequence[Skill]) -> list[PromptProcessor]:
-    """Build the processors that run on the user's prompt each turn.
-
-    Returns:
-        The user-prompt pipeline, in the order it runs.
-
-    """
     return [expand_skill_references(skills, on_load=ui.show_skill_loaded)]
 
 
 def main() -> None:
-    """Chat with the agent in the terminal, until ctrl+d."""
     skills = load_skills([Path.cwd() / Path(".agents/skills")])
     system_prompt = prompt_processor(
         prompt="""\

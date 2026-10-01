@@ -1,21 +1,9 @@
 # Copyright (c) 2026 Andrei Surugiu
 
-"""The tools the agent can call.
-
-A tool is a frozen dataclass. Its docstring tells the model what the tool
-does, its fields are the arguments (their docstrings describe them), and `run`
-does the work. To add a tool, write a class and include it in the `tools` list
-of an `AgentToolset`.
-
-`run` is async, so a tool can wait on other async work, the way `SpawnAgent`
-waits for a subagent. The tools here await nothing, so each one holds the event
-loop until it returns. That is fine, because tools run one at a time.
-"""
-
 import inspect
 import itertools
 import re
-import subprocess  # ruff: ignore[suspicious-subprocess-import] - Bash intentionally executes model-supplied commands.
+import subprocess  # ruff: ignore[suspicious-subprocess-import]
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -28,31 +16,15 @@ from pydantic_ai import ModelRetry, ToolDefinition
 from pydantic_ai.tools import GenerateToolJsonSchema
 
 MAX_LINES: Final = 100
-"""Longer files are read in parts, so that one read can't fill the context window."""
-
 MAX_MATCHES: Final = 100
-"""More matches are counted, not shown, so one search can't fill the context window."""
-
 MAX_LINE_LENGTH: Final = 200
-"""Longer lines are cut in search results. A minified file can be one huge line."""
 
 
 @with_config(ConfigDict(use_attribute_docstrings=True, extra="forbid"))
 @dataclass(frozen=True)
 class Tool(ABC):
-    """A tool: the fields are its arguments, and `run` does the work."""
-
     @abstractmethod
-    async def run(self) -> str:
-        """Do the work.
-
-        Returns:
-            The result, as text for the model.
-
-        Raises:
-            ModelRetry: Something went wrong that the model can fix.
-
-        """
+    async def run(self) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -67,7 +39,7 @@ class Bash(Tool):
 
     @override
     async def run(self) -> str:
-        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Executing commands is this tool's purpose.
+        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
             ["/bin/bash", "-c", self.command],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -110,7 +82,7 @@ class ReadFile(Tool):
     async def run(self) -> str:
         lines = Path(self.path).read_text(encoding="utf-8").splitlines()
         total = len(lines)
-        if self.offset > max(total, 1):  # offset=1 is fine for an empty file
+        if self.offset > max(total, 1):
             message = f"There is no line {self.offset}. The file has {total} lines."
             raise ModelRetry(message)
         end = self.offset - 1 + MAX_LINES
@@ -167,8 +139,6 @@ class Grep(Tool):
         shown = list(itertools.islice(matches, MAX_MATCHES))
         total = len(shown) + sum(1 for _ in matches)
         if not shown and r"\|" in self.pattern:
-            # Models copy grep without -E, which writes "or" as \|. Here \| finds a |,
-            # like in grep -E, and a model can mean that too. So hint, don't guess.
             return r'No matches. Note: \| finds a literal |. For "or", write |.'
         text = "\n".join(shown) or "No matches."
         if total > len(shown):
@@ -183,21 +153,17 @@ class Grep(Tool):
         if not root.is_dir():
             yield root
             return
-        # Skip hidden files and directories, like `ListDir` does. That skips .git and
-        # .venv too. Sort, so that the same search lists matches in the same order.
         for directory, subdirectories, names in root.walk():
             subdirectories[:] = sorted(
                 d for d in subdirectories if not d.startswith(".")
             )
             for name in sorted(names):
                 file = directory / name
-                # Reading a pipe can hang.
                 if not name.startswith(".") and file.is_file():
                     yield file
 
     @classmethod
     def _expand_braces(cls, glob: str) -> list[str]:
-        # Like a shell: "*.{py,md}" gives "*.py" and "*.md". Inner braces go first.
         end = glob.find("}")
         start = glob.rfind("{", 0, end)
         if end == -1 or start == -1:
@@ -211,12 +177,11 @@ class Grep(Tool):
 
     @staticmethod
     def _text_lines(file: Path) -> list[str]:
-        # Split lines like `ReadFile` does, so that a match's line number is its offset.
         try:
             text = file.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
-            return []  # can't be read, or not UTF-8, so binary
-        return [] if "\0" in text else text.splitlines()  # a NUL byte means binary
+            return []
+        return [] if "\0" in text else text.splitlines()
 
     @staticmethod
     def _shorten(line: str) -> str:
@@ -231,7 +196,7 @@ def _definition(tool: type[Tool]) -> ToolDefinition:
     schema: dict[str, object] = TypeAdapter(tool).json_schema(
         schema_generator=GenerateToolJsonSchema
     )
-    del schema["title"], schema["description"]  # the tool's name and description
+    del schema["title"], schema["description"]
     return ToolDefinition(
         name=_name(tool),
         description=inspect.getdoc(tool),
@@ -242,12 +207,6 @@ def _definition(tool: type[Tool]) -> ToolDefinition:
 def prepare_tools(
     tools: Sequence[type[Tool]],
 ) -> tuple[list[ToolDefinition], dict[str, TypeAdapter[Tool]]]:
-    """Prepare the supplied tool classes for model calls and execution.
-
-    Returns:
-        The schemas in input order and argument validators keyed by tool name.
-
-    """
     return (
         [_definition(tool) for tool in tools],
         {_name(tool): TypeAdapter(tool) for tool in tools},
@@ -262,16 +221,6 @@ class _Problem(TypedDict):
 async def run(
     adapters: Mapping[str, TypeAdapter[Tool]], name: str, arguments: str
 ) -> str:
-    """Run a configured tool with arguments that the model wrote as JSON.
-
-    Returns:
-        What the tool returned.
-
-    Raises:
-        ModelRetry: The call failed in a way the model can fix, like an unknown
-            tool, a bad argument, or a file that does not exist or is binary.
-
-    """
     adapter = adapters.get(name)
     if adapter is None:
         message = f"There is no tool {name!r}. Use one of: {', '.join(adapters)}."
@@ -285,5 +234,5 @@ async def run(
             for problem in problems
         )
         raise ModelRetry(message) from error
-    except (OSError, ValueError) as error:  # like a binary file, or a bad path
+    except (OSError, ValueError) as error:
         raise ModelRetry(str(error)) from error

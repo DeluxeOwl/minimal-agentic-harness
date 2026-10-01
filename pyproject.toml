@@ -29,6 +29,14 @@ select = ["ALL"]
 ignore = [
     "commented-out-code",
     "lambda-assignment",
+    "undocumented-public-module",
+    "undocumented-public-class",
+    "undocumented-public-method",
+    "undocumented-public-function",
+    "undocumented-public-package",
+    "undocumented-magic-method",
+    "undocumented-public-nested-class",
+    "undocumented-public-init",
     # Ruff's formatter is incompatible with these lint rules.
     "missing-trailing-comma",
     "prohibited-trailing-comma",

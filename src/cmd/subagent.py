@@ -1,14 +1,5 @@
 # Copyright (c) 2026 Andrei Surugiu
 
-"""Spawn a subagent: a tool that runs another agent and returns its answer.
-
-A subagent is an ordinary `Agent`, started from a spec in `SUBAGENTS`. It
-begins with an empty conversation and works until it answers. Only that answer
-comes back, as the tool's result, and the calling agent waits for it.
-
-No spec in `SUBAGENTS` includes `SpawnAgent`, so a subagent can't spawn one.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -45,11 +36,9 @@ agent will see.""",
         ),
     ),
 }
-"""The agents that `SpawnAgent` can start, by name."""
 
 
 preview: Callable[[str, AgentEvent], None] = lambda _agent, _event: None
-"""Receives a running subagent's name and each of its events. `main()` sets it."""
 
 
 @dataclass(frozen=True)
