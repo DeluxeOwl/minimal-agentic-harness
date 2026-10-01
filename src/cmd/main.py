@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Sequence
 from pathlib import Path
 
+import memory
 import models
 import subagent
 import ui
@@ -31,16 +32,23 @@ def main() -> None:
         prompt="""\
 You are a coding assistant in a terminal. Use the tools to look at files before
 you answer questions about them. Answer briefly, in Markdown.""",
-        processors=[add_working_directory, add_agents_md, add_skills(skills)],
+        processors=[
+            add_working_directory,
+            add_agents_md,
+            add_skills(skills),
+            memory.add_memory,
+        ],
     )
     user_processors = user_prompt_processors(skills)
     renderer = ui.AgentRenderer()
     subagent.preview = renderer.preview
+    memory.preview = renderer.preview
 
     spec = AgentSpec(
         model=models.CloudDeepseek,
         toolset=AgentToolset(
-            system_prompt=system_prompt, tools=[Bash, subagent.SpawnAgent]
+            system_prompt=system_prompt,
+            tools=[Bash, subagent.SpawnAgent, memory.Recall],
         ),
     )
     agent = Agent(spec, emit=renderer.handle)
@@ -55,10 +63,14 @@ you answer questions about them. Answer briefly, in Markdown.""",
                 break
             if command == "/system":
                 ui.show_system_prompt(system_prompt)
+            elif command == "/memory":
+                ui.show_memory(memory.load())
             elif command:
                 expanded = prompt_processor(prompt=prompt, processors=user_processors)
                 with renderer.turn(hint="ctrl+c to interrupt"):
+                    before = len(agent.messages)
                     event_loop.run(agent.run(expanded))
+                    event_loop.run(memory.remember(agent.messages[before:]))
             ui.echo()
 
 

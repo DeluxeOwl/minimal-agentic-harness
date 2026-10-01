@@ -41,6 +41,7 @@ if TYPE_CHECKING:
     from rich.markdown import MarkdownElement
 
     from agent import AgentEvent
+    from memory import Memory
 
 PALETTE: Final[dict[str, tuple[str, str]]] = {
     "accent": ("#a78bfa", "#7c3aed"),
@@ -489,7 +490,8 @@ def show_model_info(model: OpenAIChatModel) -> None:
 
 
 def show_tools_info(names: Iterable[str]) -> None:
-    echo(dim(f"tools: {', '.join(names)} · /system to see the prompt · ctrl+d to quit"))
+    echo(dim(f"tools: {', '.join(names)}"))
+    echo(dim("/system to see the prompt · /memory to see the notes · ctrl+d to quit"))
     echo()
 
 
@@ -520,6 +522,14 @@ def show_system_prompt(prompt: str) -> None:
         f"system prompt · {len(prompt)} chars · ~{tokens} tokens",
         prompt,
         color="accent",
+    )
+
+
+def show_memory(notes: Memory) -> None:
+    counts = f"{len(notes.core)} core · {len(notes.recent)} recent"
+    show_block(
+        f"memory · {counts} · {len(notes.archive)} archived",
+        notes.text().rstrip() or "No notes yet.",
     )
 
 

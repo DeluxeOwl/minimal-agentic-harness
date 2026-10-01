@@ -25,3 +25,14 @@ LocalMiniCPM: Final = OpenAIChatModel(
         extra_body={"session_id": str(uuid4())},
     ),
 )
+
+LocalMiniCPMNoThinking: Final = OpenAIChatModel(
+    "MiniCPM5-2B",
+    provider=OpenAIProvider(base_url="http://127.0.0.1:8090/v1", api_key="local"),
+    settings=OpenAIChatModelSettings(  # type: ignore[misc]
+        extra_body={
+            "session_id": str(uuid4()),
+            "chat_template_kwargs": {"enable_thinking": False},
+        },
+    ),
+)
