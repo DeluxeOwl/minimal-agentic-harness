@@ -51,6 +51,12 @@ ignore = [
 # These are the modules of a standalone script, not an importable package named
 # like stdlib cmd. The script imports its sibling modules directly.
 "src/cmd/*.py" = ["implicit-namespace-package"]
+# A tool's `run` is async, but these tools block until they finish. That is safe:
+# tools run one at a time, so the event loop has nothing else to do meanwhile.
+"src/cmd/tools.py" = [
+    "blocking-path-method-in-async-function",
+    "run-process-in-async-function",
+]
 # Tests use the standard-library runner, not pytest.
 "tests/*.py" = ["pytest-unittest-assertion"]
 

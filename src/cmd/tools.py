@@ -5,7 +5,11 @@
 A tool is a frozen dataclass. Its docstring tells the model what the tool
 does, its fields are the arguments (their docstrings describe them), and `run`
 does the work. To add a tool, write a class and include it in the `tools` list
-of the `AgentToolset` passed to `Agent`.
+of an `AgentToolset`.
+
+`run` is async, so a tool can wait on other async work, the way `SpawnAgent`
+waits for a subagent. The tools here await nothing, so each one holds the event
+loop until it returns. That is fine, because tools run one at a time.
 """
 
 import inspect
@@ -39,7 +43,7 @@ class Tool(ABC):
     """A tool: the fields are its arguments, and `run` does the work."""
 
     @abstractmethod
-    def run(self) -> str:
+    async def run(self) -> str:
         """Do the work.
 
         Returns:
@@ -62,7 +66,7 @@ class Bash(Tool):
     """The bash command to execute."""
 
     @override
-    def run(self) -> str:
+    async def run(self) -> str:
         result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true] - Executing commands is this tool's purpose.
             ["/bin/bash", "-c", self.command],
             stdin=subprocess.DEVNULL,
@@ -83,7 +87,7 @@ class ListDir(Tool):
     """The directory to list, relative to the working directory."""
 
     @override
-    def run(self) -> str:
+    async def run(self) -> str:
         names = [
             f"{entry.name}/" if entry.is_dir() else entry.name
             for entry in sorted(Path(self.path).iterdir())
@@ -103,7 +107,7 @@ class ReadFile(Tool):
     """The line to start from. The first line is 1."""
 
     @override
-    def run(self) -> str:
+    async def run(self) -> str:
         lines = Path(self.path).read_text(encoding="utf-8").splitlines()
         total = len(lines)
         if self.offset > max(total, 1):  # offset=1 is fine for an empty file
@@ -136,7 +140,7 @@ class Grep(Tool):
     """Search only files whose names match this glob, like `*.py` or `*.{py,md}`."""
 
     @override
-    def run(self) -> str:
+    async def run(self) -> str:
         try:
             regex = re.compile(self.pattern, re.IGNORECASE)
         except re.error as error:
@@ -255,7 +259,9 @@ class _Problem(TypedDict):
     msg: str
 
 
-def run(adapters: Mapping[str, TypeAdapter[Tool]], name: str, arguments: str) -> str:
+async def run(
+    adapters: Mapping[str, TypeAdapter[Tool]], name: str, arguments: str
+) -> str:
     """Run a configured tool with arguments that the model wrote as JSON.
 
     Returns:
@@ -271,7 +277,7 @@ def run(adapters: Mapping[str, TypeAdapter[Tool]], name: str, arguments: str) ->
         message = f"There is no tool {name!r}. Use one of: {', '.join(adapters)}."
         raise ModelRetry(message)
     try:
-        return adapter.validate_json(arguments).run()
+        return await adapter.validate_json(arguments).run()
     except ValidationError as error:
         problems = cast("list[_Problem]", error.errors(include_url=False))
         message = "; ".join(

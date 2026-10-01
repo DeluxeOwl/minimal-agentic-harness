@@ -629,17 +629,8 @@ class AgentRenderer:
             self._live = None
 
     def handle(self, event: AgentEvent) -> None:
-        """Show an event in the current turn and collect its token usage.
-
-        Raises:
-            RuntimeError: No turn owns a live region.
-
-        """
-        live = self._live
-        if live is None:
-            message = "Open a renderer turn before handling agent events."
-            raise RuntimeError(message)
-
+        """Show an event in the current turn and collect its token usage."""
+        live = self._turn_live()
         match event:
             case ModelStarted():
                 live.status("Thinking")
@@ -651,6 +642,49 @@ class AgentRenderer:
                 live.status(f"Running {tool_call.tool_name}")
             case ToolFinished(tool_call=tool_call, output=output, is_error=is_error):
                 show_tool_result(tool_call, output, live, is_error=is_error)
+
+    def preview(self, agent: str, event: AgentEvent) -> None:
+        """Show what a subagent is doing in the status, after its name.
+
+        Scrollback stays as it is, so once the subagent finishes, only the tool
+        call that spawned it and its answer remain. Its tokens still count.
+        """
+        live = self._turn_live()
+        detail: Text | None = None
+        match event:
+            case ModelStarted():
+                doing = "Thinking"
+            case PartUpdated(part=part) if (
+                part.part_kind in {"text", "thinking"} and part.content.strip()
+            ):
+                doing = "Writing" if part.part_kind == "text" else "Thinking"
+                detail = _one_line(dim.italic(part.content.strip().splitlines()[-1]))
+            case ToolStarted(tool_call=tool_call):
+                doing = f"Running {tool_call.tool_name}"
+                detail = _one_line(
+                    dim(f"{tool_call.tool_name}({_signature(tool_call)})")
+                )
+            case ModelFinished(usage=usage):
+                self._tokens += usage.output_tokens
+                return
+            case _:
+                return
+        live.status(f"{agent} › {doing}", detail=detail)  # ruff: ignore[ambiguous-unicode-character-string]
+
+    def _turn_live(self) -> Live:
+        """Find the live region of the open turn.
+
+        Returns:
+            The live region.
+
+        Raises:
+            RuntimeError: No turn owns a live region.
+
+        """
+        if self._live is None:
+            message = "Open a renderer turn before handling agent events."
+            raise RuntimeError(message)
+        return self._live
 
 
 def show_model_info(model: OpenAIChatModel) -> None:
@@ -769,22 +803,43 @@ def show_response_part(
             pass
 
 
+def _signature(tool_call: ToolCallPart) -> str:
+    """Write a tool call's arguments the way code passes them to a function.
+
+    Returns:
+        The arguments, like `path="README.md", offset=101`.
+
+    """
+    arguments: dict[str, object] = tool_call.args_as_dict()
+    return ", ".join(
+        f"{key}={json.dumps(value, ensure_ascii=False)}"
+        for key, value in arguments.items()
+    )
+
+
+def _one_line(text: Text) -> Text:
+    """Keep text on one line, cut with an ellipsis where the terminal ends.
+
+    Returns:
+        The same text, set not to wrap.
+
+    """
+    text.no_wrap = True
+    text.overflow = "ellipsis"
+    return text
+
+
 def show_tool_result(
     tool_call: ToolCallPart, output: str, live: Live, *, is_error: bool
 ) -> None:
     """Show a tool call, like `⏺ read_file(path="README.md")`, and its output."""
-    arguments: dict[str, object] = tool_call.args_as_dict()
-    signature = ", ".join(
-        f"{key}={json.dumps(value, ensure_ascii=False)}"
-        for key, value in arguments.items()
-    )
     lines = output.strip().splitlines() or ["(no output)"]
     if len(lines) > _PREVIEW_LINES:
         lines = [*lines[:_PREVIEW_LINES], f"… +{len(lines) - _PREVIEW_LINES} lines"]
     live.print(
         bullet(
             fg("error" if is_error else "success", "⏺"),
-            bold(tool_call.tool_name) + dim(f"({signature})"),
+            bold(tool_call.tool_name) + dim(f"({_signature(tool_call)})"),
         ),
         bullet(dim("  ⎿"), fg("error" if is_error else "muted", "\n".join(lines))),
     )

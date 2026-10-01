@@ -93,6 +93,18 @@ class AgentToolset:
     tools: Sequence[type[Tool]]
 
 
+@dataclass(frozen=True, kw_only=True)
+class AgentSpec:
+    """An agent, written down: a model and the toolset it works with.
+
+    A spec never changes, so one spec can start any number of agents, and each
+    of them begins with a fresh conversation.
+    """
+
+    model: OpenAIChatModel
+    toolset: AgentToolset
+
+
 class Agent:
     """Answer prompts with a model and tools, remembering the conversation.
 
@@ -100,20 +112,14 @@ class Agent:
     events in order; an exception from the handler fails the turn.
     """
 
-    def __init__(
-        self,
-        toolset: AgentToolset,
-        *,
-        model: OpenAIChatModel,
-        emit: Callable[[AgentEvent], None],
-    ) -> None:
-        """Use the supplied model, prompt, tools, and event handler."""
-        self.model = model
+    def __init__(self, spec: AgentSpec, *, emit: Callable[[AgentEvent], None]) -> None:
+        """Start a fresh conversation from a spec, reporting to an event handler."""
+        self.model = spec.model
         self._emit = emit
-        self.tool_definitions, self._tool_adapters = prepare_tools(toolset.tools)
+        self.tool_definitions, self._tool_adapters = prepare_tools(spec.toolset.tools)
         self._tools = ModelRequestParameters(function_tools=self.tool_definitions)
         self.messages: list[ModelMessage] = [
-            ModelRequest(parts=[SystemPromptPart(toolset.system_prompt)])
+            ModelRequest(parts=[SystemPromptPart(spec.toolset.system_prompt)])
         ]
 
     async def run(self, prompt: str) -> ModelResponse:
@@ -136,7 +142,7 @@ class Agent:
                 if not tool_calls:
                     return response
 
-                results = [self._run_tool(tool_call) for tool_call in tool_calls]
+                results = [await self._run_tool(tool_call) for tool_call in tool_calls]
 
                 self.messages.append(ModelRequest(parts=results))
         except BaseException:
@@ -159,12 +165,16 @@ class Agent:
         self._emit(ModelFinished(usage=response.usage))
         return response
 
-    def _run_tool(self, tool_call: ToolCallPart) -> ToolReturnPart | RetryPromptPart:
+    async def _run_tool(
+        self, tool_call: ToolCallPart
+    ) -> ToolReturnPart | RetryPromptPart:
         self._emit(ToolStarted(tool_call=tool_call))
         name, call_id = tool_call.tool_name, tool_call.tool_call_id
 
         try:
-            output = run_tool(self._tool_adapters, name, tool_call.args_as_json_str())
+            output = await run_tool(
+                self._tool_adapters, name, tool_call.args_as_json_str()
+            )
         except ModelRetry as error:
             self._emit(
                 ToolFinished(tool_call=tool_call, output=error.message, is_error=True)

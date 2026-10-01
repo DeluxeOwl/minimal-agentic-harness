@@ -3,16 +3,13 @@
 """Wire one agent to a terminal renderer and run the REPL."""
 
 import asyncio
-import os
 from collections.abc import Sequence
 from pathlib import Path
-from uuid import uuid4
 
-from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
-from pydantic_ai.providers.openai import OpenAIProvider
-
+import models
+import subagent
 import ui
-from agent import Agent, AgentToolset
+from agent import Agent, AgentSpec, AgentToolset
 from prompt_processors import (
     PromptProcessor,
     Skill,
@@ -38,25 +35,6 @@ def user_prompt_processors(skills: Sequence[Skill]) -> list[PromptProcessor]:
 
 def main() -> None:
     """Chat with the agent in the terminal, until ctrl+d."""
-    # local_model = OpenAIChatModel(
-    #     "MiniCPM5-2B",
-    #     provider=OpenAIProvider(base_url="http://127.0.0.1:8090/v1", api_key="local"),
-    #     settings=OpenAIChatModelSettings(
-    #         extra_body={"session_id": str(uuid4())},
-    #     ),
-    # )
-    local_model = OpenAIChatModel(
-        "deepseek/deepseek-v4.1-flash",
-        provider=OpenAIProvider(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=os.getenv("OPENROUTER_API_KEY"),
-        ),
-        settings=OpenAIChatModelSettings(  # type: ignore[misc]
-            extra_body={"session_id": str(uuid4())},
-        ),
-    )
-    ui.show_model_info(local_model)
-
     skills = load_skills([Path.cwd() / Path(".agents/skills")])
     system_prompt = prompt_processor(
         prompt="""\
@@ -66,13 +44,17 @@ you answer questions about them. Answer briefly, in Markdown.""",
     )
     user_processors = user_prompt_processors(skills)
     renderer = ui.AgentRenderer()
+    subagent.preview = renderer.preview
 
-    agent = Agent(
-        toolset=AgentToolset(system_prompt=system_prompt, tools=[Bash]),
-        model=local_model,
-        emit=renderer.handle,
+    spec = AgentSpec(
+        model=models.CloudDeepseek,
+        toolset=AgentToolset(
+            system_prompt=system_prompt, tools=[Bash, subagent.SpawnAgent]
+        ),
     )
+    agent = Agent(spec, emit=renderer.handle)
 
+    ui.show_model_info(spec.model)
     ui.show_tools_info(definition.name for definition in agent.tool_definitions)
 
     with asyncio.Runner() as event_loop:
